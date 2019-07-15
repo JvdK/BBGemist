@@ -1,0 +1,7 @@
+/.idea
+/res
+/tools
+/venv
+/venv_linux
+__pycache__
+Tests.py
