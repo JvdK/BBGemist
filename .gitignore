@@ -5,3 +5,4 @@
 /venv_linux
 __pycache__
 Tests.py
+*.pyc

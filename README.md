@@ -18,4 +18,9 @@ To run the program, go to the folder that contains the code and then go one leve
 python BBGemist
 ````
 
+You can update the download path in `Config.py`, the folder will be automatically created:
+```python
+DOWNLOAD_PATH = "D:/Blackboard/"
+```
+
 A self-contained .exe for Windows file might be available at a later time. (Soonᵀᴹ)
