@@ -71,7 +71,7 @@ class PageCopy(Downloader):
                 Utils.write(user_file, data)
                 logging.info('Wrote user credentials to cache')
 
-        self.get_courses()
+        self.get_courses_page()
 
         print("Done!")
 
@@ -96,15 +96,19 @@ class PageCopy(Downloader):
             print("Login failed, please check your credentials or refer to the README.md file!")
             exit()
 
-    def get_courses(self):
+    #
+    # Courses overview
+    #
+
+    def get_courses_page(self):
         page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         r = self.session.get(page_url)
         soup = Utils.soup(string=r.text)
-        self.load_courses(soup)
+        self.load_courses_tab(soup)
         self.process_page(soup)
         Utils.write(Config.DOWNLOAD_PATH + "Courses.html", soup.prettify())
 
-    def load_courses(self, soup: BeautifulSoup):
+    def load_courses_tab(self, soup: BeautifulSoup):
         # Load the data for the My Courses tab
         tab_url = f"{base_url}/webapps/portal/execute/tabs/tabAction"
         tab_data = {
@@ -121,12 +125,19 @@ class PageCopy(Downloader):
 
         # The Course Catalogue won't be downloaded so the tab can be deleted
         soup.find('div', id='column1').decompose()
+        soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
 
-    def process_page(self, soup: BeautifulSoup):
+    #
+    # General page processing
+    #
+
+    def process_page(self, soup: BeautifulSoup, depth: int = 0):
         self.remove_scripts(soup)
         self.replace_local_urls(soup, 'link', 'href')
         self.replace_local_urls(soup, 'img', 'src')
         self.replace_style_tags(soup)
+        self.cleanup_page(soup)
+        self.replace_navbar(soup, depth)
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
@@ -140,6 +151,29 @@ class PageCopy(Downloader):
             if url.startswith('/'):
                 path = self.download_local_file(url)[1:]
                 element[attr] = path
+
+    def replace_style_tags(self, soup: BeautifulSoup):
+        for tag in soup.find_all('style', {'type': 'text/css'}):
+            new_css = self.replace_css_urls(tag.text)
+            tag.string.replace_with(new_css)
+
+    @staticmethod
+    def cleanup_page(soup: BeautifulSoup):
+        for tag in soup.find_all(class_='hideoff'):
+            tag.decompose()
+        for tag in soup.find_all(class_='edit_controls'):
+            tag.decompose()
+        soup.find('div', id='quick_links_wrap').decompose()
+        soup.find('div', class_='global-nav-bar-wrap').decompose()
+
+    @staticmethod
+    def replace_navbar(soup: BeautifulSoup, depth: int):
+        soup.find('td', id='My Blackboard').decompose()
+        soup.find('td', id='Courses.label').find('a')['href'] = '../' * depth + 'Courses.html'
+        soup.find('td', id='Organisations').find('a')['href'] = '../' * depth + 'Organisations.html'
+        grades = soup.find('td', id='Support')
+        grades.find('a')['href'] = '../' * depth + 'Grades.html'
+        grades.find('span').string.replace_with('Grades')
 
     def download_local_file(self, url: str):
         local_path = self.strip_url(url)
@@ -157,19 +191,6 @@ class PageCopy(Downloader):
                 with open(full_path, "wb") as f:
                     f.write(r.content)
         return local_path
-
-    @staticmethod
-    def strip_url(url: str):
-        if '#' in url:
-            url = url[:url.find('#')]
-        if '?' in url:
-            url = url[:url.find('?')]
-        return url
-
-    def replace_style_tags(self, soup: BeautifulSoup):
-        for tag in soup.find_all('style', {'type': 'text/css'}):
-            new_css = self.replace_css_urls(tag.text)
-            tag.string.replace_with(new_css)
 
     def replace_css_urls(self, css: str, folder: str = ''):
         def url_replace(match):
@@ -192,3 +213,11 @@ class PageCopy(Downloader):
 
         result = re.sub(r"(url\(['\"]?)(.*?)(['\"]?\))", url_replace, css)
         return result
+
+    @staticmethod
+    def strip_url(url: str):
+        if '#' in url:
+            url = url[:url.find('#')]
+        if '?' in url:
+            url = url[:url.find('?')]
+        return url
