@@ -106,6 +106,7 @@ class PageCopy(Downloader):
         soup = Utils.soup(string=r.text)
         self.load_courses_tab(soup)
         self.process_page(soup)
+        self.get_all_courses(soup)
         Utils.write(Config.DOWNLOAD_PATH + "Courses.html", soup.prettify())
 
     def load_courses_tab(self, soup: BeautifulSoup):
@@ -127,17 +128,40 @@ class PageCopy(Downloader):
         soup.find('div', id='column1').decompose()
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
 
+    def get_all_courses(self, soup: BeautifulSoup):
+        courses = soup.find('div', id='_4_1termCourses_noterm').find_all('li')
+        for course in courses:
+            link = course.find('a')
+            new_url = self.get_course_page(link['href'].strip())
+            link['href'] = new_url
+
+    #
+    # Individual courses
+    #
+
+    def get_course_page(self, page_url):
+        url = base_url + page_url
+        r = self.session.get(url)
+        soup = Utils.soup(string=r.text)
+        course_name = soup.find('a', id='courseMenu_link').text.strip()
+        course_name = re.sub(r'[<>:"/\\|?*]', '', course_name)
+        current_page = soup.find('span', id='pageTitleText').text.strip()
+        file_path = f"{course_name} - {current_page}.html"
+        self.process_page(soup)
+        Utils.write(Config.DOWNLOAD_PATH + file_path, soup.prettify())
+        return file_path
+
     #
     # General page processing
     #
 
-    def process_page(self, soup: BeautifulSoup, depth: int = 0):
+    def process_page(self, soup: BeautifulSoup):
         self.remove_scripts(soup)
         self.replace_local_urls(soup, 'link', 'href')
         self.replace_local_urls(soup, 'img', 'src')
         self.replace_style_tags(soup)
         self.cleanup_page(soup)
-        self.replace_navbar(soup, depth)
+        self.replace_navbar(soup)
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
@@ -167,12 +191,12 @@ class PageCopy(Downloader):
         soup.find('div', class_='global-nav-bar-wrap').decompose()
 
     @staticmethod
-    def replace_navbar(soup: BeautifulSoup, depth: int):
+    def replace_navbar(soup: BeautifulSoup):
         soup.find('td', id='My Blackboard').decompose()
-        soup.find('td', id='Courses.label').find('a')['href'] = '../' * depth + 'Courses.html'
-        soup.find('td', id='Organisations').find('a')['href'] = '../' * depth + 'Organisations.html'
+        soup.find('td', id='Courses.label').find('a')['href'] = 'Courses.html'
+        soup.find('td', id='Organisations').find('a')['href'] = 'Organisations.html'
         grades = soup.find('td', id='Support')
-        grades.find('a')['href'] = '../' * depth + 'Grades.html'
+        grades.find('a')['href'] = 'Grades.html'
         grades.find('span').string.replace_with('Grades')
 
     def download_local_file(self, url: str):
@@ -195,7 +219,8 @@ class PageCopy(Downloader):
     def replace_css_urls(self, css: str, folder: str = ''):
         def url_replace(match):
             url = match.group(2).strip()
-            if url.lower() == 'none':
+            url_lower = url.lower()
+            if url_lower == 'none' or url_lower.startswith('data:'):
                 return match.group(0)
             if url.startswith(base_url):
                 url = url[len(base_url):]
