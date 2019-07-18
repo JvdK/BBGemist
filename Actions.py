@@ -2,6 +2,7 @@ import inspect
 import sys
 
 from Download import Download
+from PageCopy import PageCopy
 
 """
 Main Action Class
@@ -56,6 +57,16 @@ class DownloadBlackboardCourseAll(Action):
     @staticmethod
     def action():
         Download()
+
+
+class DownloadFullPages(Action):
+    code = "4"
+    name = "Download full pages including files"
+    description = "Download Blackboard pages to your computer."
+
+    @staticmethod
+    def action():
+        PageCopy()
 
 
 actions = []

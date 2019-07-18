@@ -3,6 +3,7 @@ import logging
 import Actions
 import Config
 import Utils
+from PageCopy import PageCopy
 
 
 def main():
@@ -61,6 +62,8 @@ logging.info("======================")
 
 logging.info('Start logging...')
 
-main()
+# FIXME: Debug only
+# main()
+PageCopy()
 
 logging.info('Exiting application...')
