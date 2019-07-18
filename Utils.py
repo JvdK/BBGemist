@@ -11,6 +11,8 @@ import time
 import math
 
 import re
+from distutils.util import strtobool
+
 from bs4 import BeautifulSoup
 
 import Config
@@ -20,8 +22,7 @@ def delete(file: str):
     os.remove(file)
 
 
-# TODO: Allow json
-def write(file: str, dump: str):
+def write(file: str, dump):
     if isinstance(dump, str):
         # print("This is a string")
         pass
@@ -305,3 +306,20 @@ def show(dump: dict):
     :param dump: The JSON of dict object.
     """
     print(json.dumps(dump, indent=4))
+
+
+def yes_or_no(question):
+    """
+    Aks the user a yes or no question and returns the result.
+    :param question: The question that should be asked.
+    :return: True for yes, False for no,
+    """
+
+    user_input = input(f"{question} [y/n]\n> ")
+    result = None
+    while result is None:
+        try:
+            result = strtobool(user_input)
+        except ValueError:
+            user_input = input("Please answer with y/n\n> ")
+    return result
