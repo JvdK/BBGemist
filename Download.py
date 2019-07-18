@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from getpass import getpass
 
 import requests
@@ -17,24 +18,34 @@ class Download(Downloader):
     def __init__(self):
         logging.debug("--- Initialising Downloader ---")
 
-        message = "Please login to Blackboard"
-        print(message)
-        print("=" * len(message))
-        print()
-
-        if self.username is None:
-            logging.debug('User will type username now...')
-            self.username = input("Please type your username and hit [Enter]:\n> ")
-            logging.debug("User typed username.")
-            print()
-        if self.password is None:
-            logging.debug("User will type password now...")
-            print("Please type your password (not visible) and hit [Enter]:\n")
-            self.password = getpass("> ")
-            logging.debug("User typed password.")
+        user_file = Config.CACHE_PATH + "user.txt"
+        user_data = None
+        if os.path.isfile(user_file):
+            logging.debug('Reading user credentials file')
+            user_data = Utils.data(file=user_file)
+            self.username = user_data['username']
+            self.password = user_data['password']
+            logging.debug('Read user credentials file')
+            message = "Logging in to Blackboard using stored credentials, please wait..."
+        else:
+            message = "Please login to Blackboard"
+            print(message)
+            print("=" * len(message))
             print()
 
-        message = "Logging in to Blackboard, please wait..."
+            if self.username is None:
+                logging.debug('User will type username now...')
+                self.username = input("Please type your username and hit [Enter]:\n> ")
+                logging.debug("User typed username.")
+                print()
+            if self.password is None:
+                logging.debug("User will type password now...")
+                print("Please type your password (not visible) and hit [Enter]:\n")
+                self.password = getpass("> ")
+                logging.debug("User typed password.")
+                print()
+
+            message = "Logging in to Blackboard, please wait..."
         print(message)
         print()
 
@@ -45,6 +56,19 @@ class Download(Downloader):
         self.login()
 
         Utils.wait(3)
+
+        if user_data is None:
+            logging.debug('User will answer store credentials question now...')
+            question = "Would you like to store your credentials? (unsafe, username and password will be visible)"
+            answer = Utils.yes_or_no(question)
+            logging.debug(f'User answered {answer}')
+            if answer:
+                data = {
+                    'username': self.username,
+                    'password': self.password
+                }
+                Utils.write(user_file, data)
+                logging.info('Wrote user credentials to cache')
 
         Utils.clear()
 
