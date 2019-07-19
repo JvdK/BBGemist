@@ -12,6 +12,7 @@ import Utils
 from Downloader import Downloader
 
 base_url = "https://blackboard.utwente.nl"
+website_path = Config.DOWNLOAD_PATH + "website/"
 
 
 class PageCopy(Downloader):
@@ -72,6 +73,7 @@ class PageCopy(Downloader):
                 logging.info('Wrote user credentials to cache')
 
         self.get_courses_page()
+        self.create_index_page()
 
         print("Done!")
 
@@ -96,6 +98,11 @@ class PageCopy(Downloader):
             print("Login failed, please check your credentials or refer to the README.md file!")
             exit()
 
+    @staticmethod
+    def create_index_page():
+        index_content = '<meta http-equiv="Refresh" content="0; url=website/Courses.html"/>'
+        Utils.write(Config.DOWNLOAD_PATH + "index.html", index_content)
+
     #
     # Courses overview
     #
@@ -107,7 +114,7 @@ class PageCopy(Downloader):
         self.load_courses_tab(soup)
         self.process_page(soup)
         self.get_all_courses(soup)
-        Utils.write(Config.DOWNLOAD_PATH + "Courses.html", soup.prettify())
+        Utils.write(website_path + "Courses.html", soup.prettify())
 
     def load_courses_tab(self, soup: BeautifulSoup):
         # Load the data for the My Courses tab
@@ -144,11 +151,12 @@ class PageCopy(Downloader):
         r = self.session.get(url)
         soup = Utils.soup(string=r.text)
         course_name = soup.find('a', id='courseMenu_link').text.strip()
+        # Remove illegal filename characters
         course_name = re.sub(r'[<>:"/\\|?*]', '', course_name)
         current_page = soup.find('span', id='pageTitleText').text.strip()
         file_path = f"{course_name} - {current_page}.html"
         self.process_page(soup)
-        Utils.write(Config.DOWNLOAD_PATH + file_path, soup.prettify())
+        Utils.write(website_path + file_path, soup.prettify())
         return file_path
 
     #
@@ -159,6 +167,7 @@ class PageCopy(Downloader):
         self.remove_scripts(soup)
         self.replace_local_urls(soup, 'link', 'href')
         self.replace_local_urls(soup, 'img', 'src')
+        self.replace_local_urls(soup, 'script', 'src')
         self.replace_style_tags(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
@@ -166,13 +175,25 @@ class PageCopy(Downloader):
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
         for script in soup.find_all('script'):
-            script.decompose()
+            # Keep scripts responsible for collapsing menu bar
+            if script.has_attr('src'):
+                if not any(name in script['src'] for name in ['fastinit.js', 'prototype.js', 'page.js']):
+                    script.decompose()
+            else:
+                if 'PageMenuToggler' in script.text:
+                    for line in script.text.split('\n'):
+                        if 'PageMenuToggler' in line:
+                            script.string.replace_with(line.strip())
+                else:
+                    script.decompose()
 
     def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str):
         for element in soup.find_all(tag, {attr: True}):
-            # Only replace local urls
             url = element[attr]
-            if url.startswith('/'):
+            if url.startswith(base_url):
+                url = url[len(base_url):]
+            # Only replace local urls
+            if self.is_local_url(url):
                 path = self.download_local_file(url)[1:]
                 element[attr] = path
 
@@ -183,10 +204,11 @@ class PageCopy(Downloader):
 
     @staticmethod
     def cleanup_page(soup: BeautifulSoup):
-        for tag in soup.find_all(class_='hideoff'):
+        for tag in soup.find_all(class_='hideFromQuickLinks'):
             tag.decompose()
         for tag in soup.find_all(class_='edit_controls'):
             tag.decompose()
+        soup.find('div', id='quickLinksLightboxDiv').decompose()
         soup.find('div', id='quick_links_wrap').decompose()
         soup.find('div', class_='global-nav-bar-wrap').decompose()
 
@@ -201,10 +223,17 @@ class PageCopy(Downloader):
 
     def download_local_file(self, url: str):
         local_path = self.strip_url(url)
-        full_path = Config.DOWNLOAD_PATH + local_path[1:]
+        full_path = website_path + local_path[1:]
         if not os.path.isfile(full_path):
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
             r = self.session.get(base_url + url)
+            # Update path in case of redirects
+            if len(r.history) > 0:
+                url = r.url
+                if url.startswith(base_url):
+                    url = url[len(base_url):]
+                local_path = self.strip_url(url)
+                full_path = website_path + local_path[1:]
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
             # CSS needs to be rewritten before writing to file
             if os.path.splitext(full_path)[1] == '.css':
                 local_dir = posixpath.dirname(local_path)
@@ -219,11 +248,10 @@ class PageCopy(Downloader):
     def replace_css_urls(self, css: str, folder: str = ''):
         def url_replace(match):
             url = match.group(2).strip()
-            url_lower = url.lower()
-            if url_lower == 'none' or url_lower.startswith('data:'):
-                return match.group(0)
             if url.startswith(base_url):
                 url = url[len(base_url):]
+            if not self.is_local_url(url):
+                return match.group(0)
             url = posixpath.normpath(posixpath.join(folder, url))
             path = self.download_local_file(url)
             if folder == '':
@@ -238,6 +266,11 @@ class PageCopy(Downloader):
 
         result = re.sub(r"(url\(['\"]?)(.*?)(['\"]?\))", url_replace, css)
         return result
+
+    @staticmethod
+    def is_local_url(url: str):
+        # Assumes urls starting with the base_url have been stripped
+        return not (url == 'none' or url.startswith('http:') or url.startswith('https:') or url.startswith('data:'))
 
     @staticmethod
     def strip_url(url: str):
