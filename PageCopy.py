@@ -20,16 +20,16 @@ class PageCopy(Downloader):
     password = None
 
     def __init__(self):
-        logging.debug("--- Initialising Downloader ---")
+        logging.info("--- Initialising Downloader ---")
 
         user_file = Config.CACHE_PATH + "user.txt"
         user_data = None
         if os.path.isfile(user_file):
-            logging.debug('Reading user credentials file')
+            logging.info('Reading user credentials file')
             user_data = Utils.data(file=user_file)
             self.username = user_data['username']
             self.password = user_data['password']
-            logging.debug('Read user credentials file')
+            logging.info('Read user credentials file')
             message = "Logging in to Blackboard using stored credentials, please wait..."
         else:
             message = "Please login to Blackboard"
@@ -38,20 +38,19 @@ class PageCopy(Downloader):
             print()
 
             if self.username is None:
-                logging.debug('User will type username now...')
+                logging.info('User will type username now...')
                 self.username = input("Please type your username and hit [Enter]:\n> ")
-                logging.debug("User typed username.")
+                logging.info("User typed username.")
                 print()
             if self.password is None:
-                logging.debug("User will type password now...")
+                logging.info("User will type password now...")
                 print("Please type your password (not visible) and hit [Enter]:\n")
                 self.password = getpass("> ")
-                logging.debug("User typed password.")
+                logging.info("User typed password.")
                 print()
 
             message = "Logging in to Blackboard, please wait..."
         print(message)
-        print()
 
         self.session = requests.session()
 
@@ -60,10 +59,10 @@ class PageCopy(Downloader):
         self.login()
 
         if user_data is None:
-            logging.debug('User will answer store credentials question now...')
+            logging.info('User will answer store credentials question now...')
             question = "Would you like to store your credentials? (unsafe, username and password will be visible)"
             answer = Utils.yes_or_no(question)
-            logging.debug(f'User answered {answer}')
+            logging.info(f'User answered {answer}')
             if answer:
                 data = {
                     'username': self.username,
@@ -78,6 +77,7 @@ class PageCopy(Downloader):
         print("Done!")
 
     def login(self):
+        logging.info('Logging in to Blackboard')
         login_url = f"{base_url}/webapps/login/"
 
         payload = {
@@ -100,24 +100,32 @@ class PageCopy(Downloader):
 
     @staticmethod
     def create_index_page():
+        logging.info("Creating index page")
+        print("Creating index page...")
         index_content = '<meta http-equiv="Refresh" content="0; url=website/Courses.html"/>'
         Utils.write(Config.DOWNLOAD_PATH + "index.html", index_content)
+        logging.info("Created index page")
 
     #
     # Courses overview
     #
 
     def get_courses_page(self):
+        logging.info("Retrieving courses page")
+        print("Retrieving courses...")
         page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         r = self.session.get(page_url)
         soup = Utils.soup(string=r.text)
+        logging.info("Retrieved courses page")
         self.load_courses_tab(soup)
         self.process_page(soup)
         self.get_all_courses(soup)
         Utils.write(website_path + "Courses.html", soup.prettify())
+        logging.info("Stored courses page")
 
     def load_courses_tab(self, soup: BeautifulSoup):
         # Load the data for the My Courses tab
+        logging.info("Retrieving My Courses tab")
         tab_url = f"{base_url}/webapps/portal/execute/tabs/tabAction"
         tab_data = {
             'action': 'refreshAjaxModule',
@@ -127,6 +135,7 @@ class PageCopy(Downloader):
         }
         r = self.session.post(tab_url, data=tab_data)
         tab_soup = Utils.soup(string=r.text)
+        logging.info("Retrieved My Courses tab")
         content_soup = Utils.soup(string=tab_soup.find('contents').text)
         self.remove_scripts(content_soup)
         soup.find('div', id='div_4_1').replace_with(content_soup)
@@ -134,29 +143,36 @@ class PageCopy(Downloader):
         # The Course Catalogue won't be downloaded so the tab can be deleted
         soup.find('div', id='column1').decompose()
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
+        logging.info("Processed My Courses tab")
 
     def get_all_courses(self, soup: BeautifulSoup):
+        logging.info("Retrieving all courses")
         courses = soup.find('div', id='_4_1termCourses_noterm').find_all('li')
         for course in courses:
             link = course.find('a')
             new_url = self.get_course_page(link['href'].strip())
             link['href'] = new_url
+        logging.info("Retrieved all courses")
 
     #
     # Individual courses
     #
 
     def get_course_page(self, page_url):
+        logging.info(f"Retrieving course: {page_url}")
         url = base_url + page_url
         r = self.session.get(url)
         soup = Utils.soup(string=r.text)
         course_name = soup.find('a', id='courseMenu_link').text.strip()
+        logging.info(f"Retrieved course: {page_url} - {course_name}")
+        print(f"Retrieving course: {course_name}...")
         # Remove illegal filename characters
         course_name = re.sub(r'[<>:"/\\|?*]', '', course_name)
         current_page = soup.find('span', id='pageTitleText').text.strip()
         file_path = f"{course_name} - {current_page}.html"
         self.process_page(soup)
         Utils.write(website_path + file_path, soup.prettify())
+        logging.info(f"Stored course: {course_name}")
         return file_path
 
     #
@@ -184,6 +200,7 @@ class PageCopy(Downloader):
                     for line in script.text.split('\n'):
                         if 'PageMenuToggler' in line:
                             script.string.replace_with(line.strip())
+                            break
                 else:
                     script.decompose()
 
