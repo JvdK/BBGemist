@@ -159,9 +159,9 @@ class Download(Downloader):
 
             skip = [
                 "Course Home Page",
-                "tool_id=_115",
-                "tool_id=_119",
-                "tool_id=_167"
+                "tool_id=_115",  # Email
+                "tool_id=_119",  # Discussion Board
+                "tool_id=_167"   # Contacts
             ]
 
             if not any(x in course_folder_url for x in skip) and not any(x in course_folder_name for x in skip):

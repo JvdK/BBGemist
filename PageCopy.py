@@ -190,17 +190,20 @@ class PageCopy(Downloader):
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
+        allowed_scripts = ['fastinit.js', 'prototype.js', 'page.js']
+        allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController']
         for script in soup.find_all('script'):
             # Keep scripts responsible for collapsing menu bar
             if script.has_attr('src'):
-                if not any(name in script['src'] for name in ['fastinit.js', 'prototype.js', 'page.js']):
+                if not any(name in script['src'] for name in allowed_scripts):
                     script.decompose()
             else:
-                if 'PageMenuToggler' in script.text:
+                if any(keyword in script.text for keyword in allowed_keywords):
+                    new_script = ""
                     for line in script.text.split('\n'):
-                        if 'PageMenuToggler' in line:
-                            script.string.replace_with(line.strip())
-                            break
+                        if any(keyword in line for keyword in allowed_keywords):
+                            new_script += line.strip()
+                    script.string.replace_with(new_script)
                 else:
                     script.decompose()
 
@@ -221,13 +224,18 @@ class PageCopy(Downloader):
 
     @staticmethod
     def cleanup_page(soup: BeautifulSoup):
-        for tag in soup.find_all(class_='hideFromQuickLinks'):
-            tag.decompose()
-        for tag in soup.find_all(class_='edit_controls'):
-            tag.decompose()
-        soup.find('div', id='quickLinksLightboxDiv').decompose()
-        soup.find('div', id='quick_links_wrap').decompose()
-        soup.find('div', class_='global-nav-bar-wrap').decompose()
+        def decompose(tags):
+            for tag in tags:
+                tag.decompose()
+        decompose(soup.find_all(class_='hideFromQuickLinks'))
+        decompose(soup.find_all(class_='edit_controls'))
+        decompose(soup.find_all('div', id='quickLinksLightboxDiv'))
+        decompose(soup.find_all('div', id='quick_links_wrap'))
+        decompose(soup.find_all('div', class_='global-nav-bar-wrap'))
+        decompose(soup.find_all('div', id='breadcrumb_controls_id'))
+        decompose(soup.find_all('div', class_='courseArrow'))
+        decompose(soup.find_all('div', class_='actionBarMicro'))
+        decompose(soup.find_all('div', class_='localViewToggle'))
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
