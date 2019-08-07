@@ -6,6 +6,7 @@ from getpass import getpass
 
 import requests
 from bs4 import BeautifulSoup
+from requests import Response
 
 import Config
 import Utils
@@ -18,7 +19,12 @@ website_path = Config.DOWNLOAD_PATH + "website/"
 class PageCopy(Downloader):
     username = None
     password = None
-    url_dict = {}
+    url_dict = {
+        'Courses.html': '/Courses.html',
+        'Organisations.html': '/Organisations.html',
+        'Grades.html': '/Grades.html'
+    }
+    page_titles = set()
 
     def __init__(self):
         logging.info("--- Initialising Downloader ---")
@@ -115,7 +121,6 @@ class PageCopy(Downloader):
         logging.info("Retrieved courses page")
         self.load_courses_tab(soup)
         self.process_page(soup)
-        self.get_all_courses(soup)
         Utils.write(website_path + "Courses.html", soup.prettify())
         logging.info("Stored courses page")
 
@@ -141,36 +146,6 @@ class PageCopy(Downloader):
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
         logging.info("Processed My Courses tab")
 
-    def get_all_courses(self, soup: BeautifulSoup):
-        logging.info("Retrieving all courses")
-        courses = soup.find('div', id='_4_1termCourses_noterm').find_all('li')
-        for course in courses:
-            link = course.find('a')
-            new_url = self.get_course_page(link['href'].strip())
-            link['href'] = new_url
-        logging.info("Retrieved all courses")
-
-    #
-    # Individual courses
-    #
-
-    def get_course_page(self, page_url):
-        logging.info(f"Retrieving course: {page_url}")
-        url = base_url + page_url
-        r = self.session.get(url)
-        soup = Utils.soup(string=r.text)
-        course_name = soup.find('a', id='courseMenu_link').text.strip()
-        logging.info(f"Retrieved course: {page_url} - {course_name}")
-        print(f"Retrieving course: {course_name}...")
-        # Remove illegal filename characters
-        course_name = re.sub(r'[<>:"/\\|?*]', '', course_name)
-        current_page = soup.find('span', id='pageTitleText').text.strip()
-        file_path = f"{course_name} - {current_page}.html"
-        self.process_page(soup)
-        Utils.write(website_path + file_path, soup.prettify())
-        logging.info(f"Stored course: {course_name}")
-        return file_path
-
     #
     # General page processing
     #
@@ -179,26 +154,30 @@ class PageCopy(Downloader):
         self.remove_scripts(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
-        self.replace_local_files(soup, 'img', 'src')
-        self.replace_local_files(soup, 'script', 'src')
-        self.replace_local_files(soup, 'link', 'href')
+        self.replace_local_urls(soup, 'img', 'src')
+        self.replace_local_urls(soup, 'script', 'src')
+        self.replace_local_urls(soup, 'link', 'href')
         self.replace_style_tags(soup)
+        self.replace_local_urls(soup, 'a', 'href')
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
         allowed_scripts = ['fastinit.js', 'prototype.js', 'page.js']
         allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController']
         for script in soup.find_all('script'):
-            # Keep scripts responsible for collapsing menu bar
             if script.has_attr('src'):
+                # Keep allowed scripts
                 if not any(name in script['src'] for name in allowed_scripts):
                     script.decompose()
             else:
-                if any(keyword in script.text for keyword in allowed_keywords):
-                    new_script = ""
-                    for line in script.text.split('\n'):
-                        if any(keyword in line for keyword in allowed_keywords):
-                            new_script += line.strip()
+                def contains_allowed_keyword(text):
+                    return any(keyword in text for keyword in allowed_keywords)
+
+                # Keep lines containing allowed keywords
+                if contains_allowed_keyword(script.text):
+                    lines = script.text.split('\n')
+                    allowed_lines = [line.strip() for line in lines if contains_allowed_keyword(line)]
+                    new_script = '\n'.join(allowed_lines)
                     script.string.replace_with(new_script)
                 else:
                     script.decompose()
@@ -221,18 +200,21 @@ class PageCopy(Downloader):
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
-        soup.find('td', id='My Blackboard').decompose()
-        soup.find('td', id='Courses.label').find('a')['href'] = 'Courses.html'
-        soup.find('td', id='Organisations').find('a')['href'] = 'Organisations.html'
-        grades = soup.find('td', id='Support')
-        grades.find('a')['href'] = 'Grades.html'
-        grades.find('span').string.replace_with('Grades')
+        if soup.find('div', id='globalNavPageNavArea'):
+            soup.find('td', id='My Blackboard').decompose()
+            soup.find('td', id='Courses.label').find('a')['href'] = 'Courses.html'
+            soup.find('td', id='Organisations').find('a')['href'] = 'Organisations.html'
+            grades = soup.find('td', id='Support')
+            grades.find('a')['href'] = 'Grades.html'
+            grades.find('span').string.replace_with('Grades')
 
-    def replace_local_files(self, soup: BeautifulSoup, tag: str, attr: str):
+    def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str):
         for element in soup.find_all(tag, {attr: True}):
-            url = self.strip_base_url(element[attr])
+            url = self.strip_base_url(element[attr].strip())
             # Only replace local urls
             if self.is_local_url(url):
+                if not url.startswith('/'):
+                    url = '/' + url
                 path = self.download_local_file(url)[1:]
                 element[attr] = path
 
@@ -246,43 +228,82 @@ class PageCopy(Downloader):
         if url in self.url_dict:
             return self.url_dict[url]
 
-        local_path = self.strip_url(url)
-        full_path = website_path + local_path[1:]
-        self.url_dict[url] = local_path
-
         # Check if file already exists
+        local_path = self.strip_url(url)
+        full_path = self.get_full_path(local_path)
         if os.path.isfile(full_path):
+            self.update_url_dict(local_path, url=url)
             return local_path
 
-        r = self.session.get(base_url + url)
-
-        # Update path in case of redirects
-        if len(r.history) > 0:
+        with self.session.get(base_url + url, stream=True) as r:
             url = self.strip_base_url(r.url)
+
+            # Check if (potentially redirected) url already has been downloaded
+            if url in self.url_dict:
+                # Store the redirected urls as well
+                self.update_url_dict(self.url_dict[url], request=r)
+                return self.url_dict[url]
+
+            # Check if (potentially redirected) file already exists
             local_path = self.strip_url(url)
-            full_path = website_path + local_path[1:]
-            self.url_dict[url] = local_path
-
-            # Update the redirected urls as well
-            for request in r.history:
-                redirected_url = self.strip_base_url(request.url)
-                self.url_dict[redirected_url] = local_path
-
-            # Check if redirected file already exists
+            full_path = self.get_full_path(local_path)
             if os.path.isfile(full_path):
+                self.update_url_dict(local_path, url=url, request=r)
                 return local_path
 
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            is_html = 'html' in r.headers['content-type']
+            soup = None
 
-        # CSS needs to be rewritten before writing to file
-        if os.path.splitext(full_path)[1] == '.css':
-            local_dir = posixpath.dirname(local_path)
-            css = self.replace_css_urls(r.text, local_dir)
-            with open(full_path, "w", encoding='utf-8') as f:
-                f.write(css)
+            # HTML paths are based on page title, file paths are based on url path
+            if is_html:
+                soup = Utils.soup(string=r.text)
+                local_path = self.generate_page_title(soup)
+            else:
+                local_path = self.strip_url(url)
+
+            print(f'Retrieving: {local_path}')
+            full_path = self.get_full_path(local_path)
+            self.update_url_dict(local_path, url=url, request=r)
+
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            # HTML pages need te be processed
+            if is_html:
+                self.process_page(soup)
+                Utils.write(full_path, soup.prettify())
+            # CSS urls need to be rewritten
+            elif os.path.splitext(full_path)[1] == '.css':
+                local_dir = posixpath.dirname(local_path)
+                css = self.replace_css_urls(r.text, local_dir)
+                with open(full_path, "w", encoding='utf-8') as f:
+                    f.write(css)
+            # Other files can be stored without processing
+            else:
+                with open(full_path, "wb") as f:
+                    # Use chunks in case of very large files
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+            return local_path
+
+    def generate_page_title(self, soup):
+        title = soup.find('title')
+        if title:
+            # Remove illegal filename characters
+            title = re.sub(r'[<>:"/\\|?*]', '', title.text)
         else:
-            with open(full_path, "wb") as f:
-                f.write(r.content)
+            title = 'unknown'
+
+        local_path = None
+        done = False
+        counter = 0
+        while not done:
+            local_path = f'/{title}.html' if counter == 0 else f'/{title} ({counter}).html'
+            if local_path in self.page_titles:
+                counter += 1
+            else:
+                self.page_titles.add(local_path)
+                done = True
         return local_path
 
     def replace_css_urls(self, css: str, folder: str = ''):
@@ -306,10 +327,38 @@ class PageCopy(Downloader):
         result = re.sub(r"(url\(['\"]?)(.*?)(['\"]?\))", url_replace, css)
         return result
 
+    def update_url_dict(self, path: str, url: str = None, request: Response = None):
+        if url:
+            self.url_dict[url] = path
+        if request:
+            # Store the redirected urls as well
+            for redirect in request.history:
+                redirected_url = self.strip_base_url(redirect.url)
+                self.url_dict[redirected_url] = path
+
+    @staticmethod
+    def get_full_path(local_path):
+        return website_path + local_path[1:]
+
     @staticmethod
     def is_local_url(url: str):
-        return url.startswith(base_url) or not \
-            (url == 'none' or url.startswith('data:') or url.startswith('http:') or url.startswith('https:'))
+        url = url.lower()
+        return url.startswith(base_url) or not (
+                url == 'none' or
+                url.startswith('#') or
+                url.startswith('%') or
+                url.startswith('mailto:') or
+                url.startswith('data:') or
+                url.startswith('javascript:') or
+                url.startswith('http:') or
+                url.startswith('https:')
+        )
+
+    @staticmethod
+    def strip_base_url(url: str):
+        if url.startswith(base_url):
+            url = url[len(base_url):]
+        return url
 
     @staticmethod
     def strip_url(url: str):
@@ -317,10 +366,4 @@ class PageCopy(Downloader):
             url = url[:url.find('#')]
         if '?' in url:
             url = url[:url.find('?')]
-        return url
-
-    @staticmethod
-    def strip_base_url(url: str):
-        if url.startswith(base_url):
-            url = url[len(base_url):]
         return url
