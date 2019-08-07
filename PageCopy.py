@@ -18,6 +18,7 @@ website_path = Config.DOWNLOAD_PATH + "website/"
 class PageCopy(Downloader):
     username = None
     password = None
+    url_dict = {}
 
     def __init__(self):
         logging.info("--- Initialising Downloader ---")
@@ -36,7 +37,6 @@ class PageCopy(Downloader):
             print(message)
             print("=" * len(message))
             print()
-
             if self.username is None:
                 logging.info('User will type username now...')
                 self.username = input("Please type your username and hit [Enter]:\n> ")
@@ -48,14 +48,11 @@ class PageCopy(Downloader):
                 self.password = getpass("> ")
                 logging.info("User typed password.")
                 print()
-
             message = "Logging in to Blackboard, please wait..."
         print(message)
 
         self.session = requests.session()
-
         self.files = []
-
         self.login()
 
         if user_data is None:
@@ -73,7 +70,6 @@ class PageCopy(Downloader):
 
         self.get_courses_page()
         self.create_index_page()
-
         print("Done!")
 
     def login(self):
@@ -181,12 +177,12 @@ class PageCopy(Downloader):
 
     def process_page(self, soup: BeautifulSoup):
         self.remove_scripts(soup)
-        self.replace_local_urls(soup, 'link', 'href')
-        self.replace_local_urls(soup, 'img', 'src')
-        self.replace_local_urls(soup, 'script', 'src')
-        self.replace_style_tags(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
+        self.replace_local_files(soup, 'img', 'src')
+        self.replace_local_files(soup, 'script', 'src')
+        self.replace_local_files(soup, 'link', 'href')
+        self.replace_style_tags(soup)
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
@@ -207,26 +203,12 @@ class PageCopy(Downloader):
                 else:
                     script.decompose()
 
-    def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str):
-        for element in soup.find_all(tag, {attr: True}):
-            url = element[attr]
-            if url.startswith(base_url):
-                url = url[len(base_url):]
-            # Only replace local urls
-            if self.is_local_url(url):
-                path = self.download_local_file(url)[1:]
-                element[attr] = path
-
-    def replace_style_tags(self, soup: BeautifulSoup):
-        for tag in soup.find_all('style', {'type': 'text/css'}):
-            new_css = self.replace_css_urls(tag.text)
-            tag.string.replace_with(new_css)
-
     @staticmethod
     def cleanup_page(soup: BeautifulSoup):
         def decompose(tags):
             for tag in tags:
                 tag.decompose()
+
         decompose(soup.find_all(class_='hideFromQuickLinks'))
         decompose(soup.find_all(class_='edit_controls'))
         decompose(soup.find_all('div', id='quickLinksLightboxDiv'))
@@ -246,35 +228,67 @@ class PageCopy(Downloader):
         grades.find('a')['href'] = 'Grades.html'
         grades.find('span').string.replace_with('Grades')
 
+    def replace_local_files(self, soup: BeautifulSoup, tag: str, attr: str):
+        for element in soup.find_all(tag, {attr: True}):
+            url = self.strip_base_url(element[attr])
+            # Only replace local urls
+            if self.is_local_url(url):
+                path = self.download_local_file(url)[1:]
+                element[attr] = path
+
+    def replace_style_tags(self, soup: BeautifulSoup):
+        for tag in soup.find_all('style', {'type': 'text/css'}):
+            new_css = self.replace_css_urls(tag.text)
+            tag.string.replace_with(new_css)
+
     def download_local_file(self, url: str):
+        # Check if url already has been downloaded
+        if url in self.url_dict:
+            return self.url_dict[url]
+
         local_path = self.strip_url(url)
         full_path = website_path + local_path[1:]
-        if not os.path.isfile(full_path):
-            r = self.session.get(base_url + url)
-            # Update path in case of redirects
-            if len(r.history) > 0:
-                url = r.url
-                if url.startswith(base_url):
-                    url = url[len(base_url):]
-                local_path = self.strip_url(url)
-                full_path = website_path + local_path[1:]
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            # CSS needs to be rewritten before writing to file
-            if os.path.splitext(full_path)[1] == '.css':
-                local_dir = posixpath.dirname(local_path)
-                css = self.replace_css_urls(r.text, local_dir)
-                with open(full_path, "w", encoding='utf-8') as f:
-                    f.write(css)
-            else:
-                with open(full_path, "wb") as f:
-                    f.write(r.content)
+        self.url_dict[url] = local_path
+
+        # Check if file already exists
+        if os.path.isfile(full_path):
+            return local_path
+
+        r = self.session.get(base_url + url)
+
+        # Update path in case of redirects
+        if len(r.history) > 0:
+            url = self.strip_base_url(r.url)
+            local_path = self.strip_url(url)
+            full_path = website_path + local_path[1:]
+            self.url_dict[url] = local_path
+
+            # Update the redirected urls as well
+            for request in r.history:
+                redirected_url = self.strip_base_url(request.url)
+                self.url_dict[redirected_url] = local_path
+
+            # Check if redirected file already exists
+            if os.path.isfile(full_path):
+                return local_path
+
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+        # CSS needs to be rewritten before writing to file
+        if os.path.splitext(full_path)[1] == '.css':
+            local_dir = posixpath.dirname(local_path)
+            css = self.replace_css_urls(r.text, local_dir)
+            with open(full_path, "w", encoding='utf-8') as f:
+                f.write(css)
+        else:
+            with open(full_path, "wb") as f:
+                f.write(r.content)
         return local_path
 
     def replace_css_urls(self, css: str, folder: str = ''):
         def url_replace(match):
             url = match.group(2).strip()
-            if url.startswith(base_url):
-                url = url[len(base_url):]
+            url = self.strip_base_url(url)
             if not self.is_local_url(url):
                 return match.group(0)
             url = posixpath.normpath(posixpath.join(folder, url))
@@ -294,8 +308,8 @@ class PageCopy(Downloader):
 
     @staticmethod
     def is_local_url(url: str):
-        # Assumes urls starting with the base_url have been stripped
-        return not (url == 'none' or url.startswith('http:') or url.startswith('https:') or url.startswith('data:'))
+        return url.startswith(base_url) or not \
+            (url == 'none' or url.startswith('data:') or url.startswith('http:') or url.startswith('https:'))
 
     @staticmethod
     def strip_url(url: str):
@@ -303,4 +317,10 @@ class PageCopy(Downloader):
             url = url[:url.find('#')]
         if '?' in url:
             url = url[:url.find('?')]
+        return url
+
+    @staticmethod
+    def strip_base_url(url: str):
+        if url.startswith(base_url):
+            url = url[len(base_url):]
         return url
