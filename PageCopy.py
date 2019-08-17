@@ -2,6 +2,7 @@ import logging
 import os
 import posixpath
 import re
+import urllib.parse
 from getpass import getpass
 
 import requests
@@ -20,9 +21,9 @@ class PageCopy(Downloader):
     username = None
     password = None
     url_dict = {
-        'Courses.html': '/Courses.html',
-        'Organisations.html': '/Organisations.html',
-        'Grades.html': '/Grades.html'
+        '/Courses.html': '/Courses.html',
+        '/Organisations.html': '/Organisations.html',
+        '/Grades.html': '/Grades.html'
     }
     page_titles = set()
 
@@ -109,7 +110,7 @@ class PageCopy(Downloader):
         logging.info("Created index page")
 
     #
-    # Courses overview
+    # Overview pages
     #
 
     def get_courses_page(self):
@@ -119,38 +120,17 @@ class PageCopy(Downloader):
         r = self.session.get(page_url)
         soup = Utils.soup(string=r.text)
         logging.info("Retrieved courses page")
-        self.load_courses_tab(soup)
         self.process_page(soup)
         Utils.write(website_path + "Courses.html", soup.prettify())
         logging.info("Stored courses page")
-
-    def load_courses_tab(self, soup: BeautifulSoup):
-        # Load the data for the My Courses tab
-        logging.info("Retrieving My Courses tab")
-        tab_url = f"{base_url}/webapps/portal/execute/tabs/tabAction"
-        tab_data = {
-            'action': 'refreshAjaxModule',
-            'modId': '4_1',
-            'tabId': '_2_1',
-            'tab_tab_group_id': '_2_1'
-        }
-        r = self.session.post(tab_url, data=tab_data)
-        tab_soup = Utils.soup(string=r.text)
-        logging.info("Retrieved My Courses tab")
-        content_soup = Utils.soup(string=tab_soup.find('contents').text)
-        self.remove_scripts(content_soup)
-        soup.find('div', id='div_4_1').replace_with(content_soup)
-
-        # The Course Catalogue won't be downloaded so the tab can be deleted
-        soup.find('div', id='column1').decompose()
-        soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
-        logging.info("Processed My Courses tab")
 
     #
     # General page processing
     #
 
     def process_page(self, soup: BeautifulSoup):
+        self.load_tabs(soup)
+        self.load_course_information(soup)
         self.remove_scripts(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
@@ -159,6 +139,30 @@ class PageCopy(Downloader):
         self.replace_local_urls(soup, 'link', 'href')
         self.replace_style_tags(soup)
         self.replace_local_urls(soup, 'a', 'href')
+
+    def load_tabs(self, soup: BeautifulSoup):
+        tab_url = '/webapps/portal/execute/tabs/tabAction'
+        full_url = base_url + tab_url
+        for script in soup.find_all('script', text=True):
+            script = script.text
+            if '/webapps/portal/execute/tabs/tabAction' in script:
+                div_id = re.search(r"\$\('([^']*)'\)", script).group(1)
+                parameters = re.search(r"parameters: '([^,']*)',", script).group(1)
+                data = urllib.parse.parse_qs(parameters)
+                r = self.session.post(full_url, data=data)
+                tab_soup = Utils.soup(string=r.text)
+                content_soup = Utils.soup(string=tab_soup.find('contents').text)
+                soup.find('div', id=div_id).replace_with(content_soup)
+
+    def load_course_information(self, soup: BeautifulSoup):
+        url_part = '/webapps/utnl-OsirisCursusinformatie-bb_bb60/showCourseInformationJsAsync.do'
+        for script in soup.find_all('script', {'src': True}):
+            if url_part in script['src']:
+                r = self.session.get(base_url + script['src'])
+                course_information = re.search(r"var html = '(.*)';", r.text).group(1)
+                course_information = course_information.encode('utf-8').decode('unicode_escape').replace('\\/', '/')
+                course_information_soup = Utils.soup(string=course_information)
+                soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
 
     @staticmethod
     def remove_scripts(soup: BeautifulSoup):
@@ -197,6 +201,23 @@ class PageCopy(Downloader):
         decompose(soup.find_all('div', class_='courseArrow'))
         decompose(soup.find_all('div', class_='actionBarMicro'))
         decompose(soup.find_all('div', class_='localViewToggle'))
+        decompose(soup.find_all('div', id='controlPanelPalette'))
+        decompose(soup.find_all('div', class_='eudModule'))
+        decompose(soup.find_all('div', id='actionbar'))
+        decompose(soup.find_all('div', id='module:_28_1'))  # Course Catalogue
+        decompose(soup.find_all('div', id='module:_493_1'))  # Search course catalogue
+        decompose(soup.find_all('div', id='copyright'))
+
+        def decompose_url(url_part):
+            for a in soup.find_all('a', {'href': True}):
+                if url_part in a['href']:
+                    a.decompose()
+
+        decompose_url('tool_id=_115_1')  # Email
+        decompose_url('tool_id=_119_1')  # TODO: Fix discussion boards
+        decompose_url('tool_id=_2134_1')  # TODO: Fix discussion boards
+        decompose_url('viewExtendedHelp')  # Help pages
+        # TODO: Edit mode pages
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
@@ -229,7 +250,7 @@ class PageCopy(Downloader):
             return self.url_dict[url]
 
         # Check if file already exists
-        local_path = self.strip_url(url)
+        local_path = self.url_to_path(url)
         full_path = self.get_full_path(local_path)
         if os.path.isfile(full_path):
             self.update_url_dict(local_path, url=url)
@@ -245,7 +266,7 @@ class PageCopy(Downloader):
                 return self.url_dict[url]
 
             # Check if (potentially redirected) file already exists
-            local_path = self.strip_url(url)
+            local_path = self.url_to_path(url)
             full_path = self.get_full_path(local_path)
             if os.path.isfile(full_path):
                 self.update_url_dict(local_path, url=url, request=r)
@@ -259,7 +280,7 @@ class PageCopy(Downloader):
                 soup = Utils.soup(string=r.text)
                 local_path = self.generate_page_title(soup)
             else:
-                local_path = self.strip_url(url)
+                local_path = self.url_to_path(url)
 
             print(f'Retrieving: {local_path}')
             full_path = self.get_full_path(local_path)
@@ -361,9 +382,10 @@ class PageCopy(Downloader):
         return url
 
     @staticmethod
-    def strip_url(url: str):
+    def url_to_path(url: str):
         if '#' in url:
             url = url[:url.find('#')]
         if '?' in url:
             url = url[:url.find('?')]
+        url = urllib.parse.unquote(url)
         return url
