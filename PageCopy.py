@@ -133,17 +133,18 @@ class PageCopy(Downloader):
     # General page processing
     #
 
-    def process_page(self, soup: BeautifulSoup, local_dir: str):
+    def process_page(self, soup: BeautifulSoup, url_dir: str):
         self.load_tabs(soup)
         self.load_course_information(soup)
+        self.load_discussion_board(soup)
         self.remove_scripts(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
-        self.replace_local_urls(soup, 'img', 'src', local_dir)
-        self.replace_local_urls(soup, 'script', 'src', local_dir)
-        self.replace_local_urls(soup, 'link', 'href', local_dir)
-        self.replace_style_tags(soup)
-        self.replace_local_urls(soup, 'a', 'href', local_dir)
+        self.replace_local_urls(soup, 'img', 'src', url_dir)
+        self.replace_local_urls(soup, 'script', 'src', url_dir)
+        self.replace_local_urls(soup, 'link', 'href', url_dir)
+        self.replace_style_tags(soup, url_dir)
+        self.replace_local_urls(soup, 'a', 'href', url_dir)
         self.replace_onclick(soup)
 
     def load_tabs(self, soup: BeautifulSoup):
@@ -169,6 +170,15 @@ class PageCopy(Downloader):
                 course_information = course_information.encode('utf-8').decode('unicode_escape').replace('\\/', '/')
                 course_information_soup = Utils.soup(string=course_information)
                 soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
+
+    def load_discussion_board(self, soup: BeautifulSoup):
+        for script in soup.find_all('script', text=True):
+            script = script.text
+            if 'treeUrl' in script:
+                tree_url = re.search(r'var treeUrl = "([^"]*)";', script).group(1)
+                r = self.session.get(base_url + tree_url)
+                tree_soup = Utils.soup(string=r.text)
+                soup.find('div', id='tree').replace_with(tree_soup)
 
     def remove_scripts(self, soup: BeautifulSoup):
         allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'ngui', 'mygrades.js',
@@ -218,7 +228,7 @@ class PageCopy(Downloader):
             setStringTempScope: function(){}
         }
         '''
-        soup.append(script)
+        soup.head.insert(0, script)
 
     @staticmethod
     def cleanup_page(soup: BeautifulSoup):
@@ -236,8 +246,8 @@ class PageCopy(Downloader):
         decompose(soup.find_all('div', class_='actionBarMicro'))
         decompose(soup.find_all('div', class_='localViewToggle'))
         decompose(soup.find_all('div', id='controlPanelPalette'))
-        decompose(soup.find_all('div', class_='eudModule'))
-        decompose(soup.find_all('div', id='actionbar'))
+        decompose(soup.find_all('div', class_='eudModule'))  # Home page modules
+        decompose(soup.find_all('div', id='actionbar'))  # Action bar
         decompose(soup.find_all('div', id='module:_28_1'))  # Course Catalogue
         decompose(soup.find_all('div', id='module:_493_1'))  # Search course catalogue
         decompose(soup.find_all('div', id='copyright'))  # Copyright at page bottom
@@ -246,17 +256,40 @@ class PageCopy(Downloader):
         decompose(soup.find_all('div', id='step3'))  # Add comments
         decompose(soup.find_all('div', class_='submitStepBottom'))  # Assignment submission buttons
         decompose(soup.find_all('div', id='iconLegendLinkDiv'))  # Icon legend
+        decompose(soup.find_all('div', class_='containerOptions'))  # Action bar options
+        decompose(soup.find_all('div', class_='contextMenuContainer'))  # Context menu
+        decompose(soup.find_all('div', id='listContainer_showAllButton'))  # Discussion Board show all
+        decompose(soup.find_all('div', id='listContainer_openpaging'))  # Discussion Board edit
+        decompose(soup.find_all('div', id='listContainer_editpaging'))  # Discussion Board edit
+        decompose(soup.find_all('ul', id='listContainer_nav_batch_top'))  # File exchange delete
+        decompose(soup.find_all('ul', id='listContainer_nav_batch_bot'))  # File exchange delete
+        decompose(soup.find_all('div', id='top_list_action_bar'))  # Discussion Board action bar
+        decompose(soup.find_all('div', id='bottom_list_action_bar'))  # Discussion Board action bar
 
         def decompose_url(url_part):
             for a in soup.find_all('a', {'href': True}):
                 if url_part in a['href']:
                     a.decompose()
 
+        decompose_url('tool_id=_1842_1')  # Unenroll
         decompose_url('tool_id=_115_1')  # Email
-        decompose_url('tool_id=_119_1')  # TODO: Fix discussion boards
-        decompose_url('tool_id=_2134_1')  # TODO: Fix discussion boards
+        decompose_url('displayEmail')  # Email
         decompose_url('viewExtendedHelp')  # Help pages
+
         # TODO: Edit mode pages
+
+        def del_href(tags):
+            for tag in tags:
+                del tag['href']
+
+        del_href(soup.find_all('a', class_='sortheader'))  # Column sorting
+
+        def del_href_url(url_part):
+            for a in soup.find_all('a', {'href': True}):
+                if url_part in a['href']:
+                    del a['href']
+
+        del_href_url('oslt-signUpList-bb_bb60')  # Sign up lists
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
@@ -289,15 +322,15 @@ class PageCopy(Downloader):
                 path = self.download_local_file(url)[1:]
                 element[attr] = path
 
-    def replace_style_tags(self, soup: BeautifulSoup):
+    def replace_style_tags(self, soup: BeautifulSoup, url_dir: str):
         # Replace local css
         for tag in soup.find_all('style', {'type': 'text/css'}):
-            new_css = self.replace_css_urls(tag.text)
+            new_css = self.replace_css_urls(tag.text, url_dir)
             tag.string.replace_with(new_css)
 
         # Replace inline css
         for tag in soup.find_all(True, {'style': True}):
-            new_style = self.replace_css_urls(tag['style'])
+            new_style = self.replace_css_urls(tag['style'], url_dir)
             tag['style'] = new_style
 
     def download_local_file(self, url: str):
@@ -317,13 +350,16 @@ class PageCopy(Downloader):
             url = self.strip_base_url(r.url)
 
             # Check if (potentially redirected) url already has been downloaded
-            if url in self.url_dict:
+            if url in self.url_dict or any(redirect.url in self.url_dict for redirect in r.history):
                 # Store the redirected urls as well
-                self.update_url_dict(self.url_dict[url], request=r)
+                self.update_url_dict(self.url_dict[url], url=url, request=r)
                 return self.url_dict[url]
 
             # Check if (potentially redirected) file already exists
-            local_path = self.url_to_path(url)
+            if r.status_code == 404:
+                local_path = '/404.html'
+            else:
+                local_path = self.url_to_path(url)
             full_path = self.get_full_path(local_path)
             if os.path.isfile(full_path):
                 self.update_url_dict(local_path, url=url, request=r)
@@ -332,15 +368,15 @@ class PageCopy(Downloader):
             is_html = 'html' in r.headers['content-type']
             soup = None
 
-            # HTML paths are based on page title, file paths are based on url path
+            # HTML paths are based on page title
             if is_html:
                 soup = Utils.soup(string=r.text)
-                local_path = self.generate_page_title(soup)
-            else:
-                local_path = self.url_to_path(url)
+                if r.status_code != 404:
+                    local_path = self.generate_page_title(soup)
+                    full_path = self.get_full_path(local_path)
 
             print(f'Retrieving: {local_path}')
-            full_path = self.get_full_path(local_path)
+
             self.update_url_dict(local_path, url=url, request=r)
 
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -352,8 +388,9 @@ class PageCopy(Downloader):
                 Utils.write(full_path, soup.prettify())
             # CSS urls need to be rewritten
             elif os.path.splitext(full_path)[1] == '.css':
+                url_dir = posixpath.dirname(url)
                 local_dir = posixpath.dirname(local_path)
-                css = self.replace_css_urls(r.text, local_dir)
+                css = self.replace_css_urls(r.text, url_dir, local_dir)
                 with open(full_path, "w", encoding='utf-8') as f:
                     f.write(css)
             # Other files can be stored without processing
@@ -385,15 +422,15 @@ class PageCopy(Downloader):
                 done = True
         return local_path
 
-    def replace_css_urls(self, css: str, folder: str = '/'):
+    def replace_css_urls(self, css: str, url_dir: str, local_dir: str = '/'):
         def url_replace(match):
             url = match.group(2).strip()
             url = self.strip_base_url(url)
             if not self.is_local_url(url):
                 return match.group(0)
-            url = posixpath.normpath(posixpath.join(folder, url))
-            path = self.download_local_file(url)
-            relative_path = posixpath.relpath(path, folder)
+            full_url = posixpath.normpath(posixpath.join(url_dir, url))
+            path = self.download_local_file(full_url)
+            relative_path = posixpath.relpath(path, local_dir)
             return match.group(1) + relative_path + match.group(3)
 
         result = re.sub(r"(url\(['\"]?)(.*?)(['\"]?\))", url_replace, css)
@@ -420,6 +457,7 @@ class PageCopy(Downloader):
                 url.startswith('#') or
                 url.startswith('%') or
                 url.startswith('mailto:') or
+                url.startswith('ftp:') or
                 url.startswith('data:') or
                 url.startswith('javascript:') or
                 url.startswith('http:') or
