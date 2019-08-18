@@ -21,9 +21,9 @@ class PageCopy(Downloader):
     username = None
     password = None
     url_dict = {
-        '/Courses.html': '/Courses.html',
-        '/Organisations.html': '/Organisations.html',
-        '/Grades.html': '/Grades.html'
+        'Courses.html': '/Courses.html',
+        'Organisations.html': '/Organisations.html',
+        'Grades.html': '/Grades.html'
     }
     page_titles = set()
 
@@ -75,6 +75,7 @@ class PageCopy(Downloader):
                 Utils.write(user_file, data)
                 logging.info('Wrote user credentials to cache')
 
+        self.get_cdn_images()
         self.get_courses_page()
         self.create_index_page()
         print("Done!")
@@ -101,6 +102,9 @@ class PageCopy(Downloader):
             print("Login failed, please check your credentials or refer to the README.md file!")
             exit()
 
+    def get_cdn_images(self):
+        self.download_local_file('/images/ci/mybb/x_btn.png')
+
     @staticmethod
     def create_index_page():
         logging.info("Creating index page")
@@ -118,9 +122,10 @@ class PageCopy(Downloader):
         print("Retrieving courses...")
         page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         r = self.session.get(page_url)
+        url_dir = posixpath.dirname(self.strip_base_url(r.url))
         soup = Utils.soup(string=r.text)
         logging.info("Retrieved courses page")
-        self.process_page(soup)
+        self.process_page(soup, url_dir)
         Utils.write(website_path + "Courses.html", soup.prettify())
         logging.info("Stored courses page")
 
@@ -128,24 +133,25 @@ class PageCopy(Downloader):
     # General page processing
     #
 
-    def process_page(self, soup: BeautifulSoup):
+    def process_page(self, soup: BeautifulSoup, local_dir: str):
         self.load_tabs(soup)
         self.load_course_information(soup)
         self.remove_scripts(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
-        self.replace_local_urls(soup, 'img', 'src')
-        self.replace_local_urls(soup, 'script', 'src')
-        self.replace_local_urls(soup, 'link', 'href')
+        self.replace_local_urls(soup, 'img', 'src', local_dir)
+        self.replace_local_urls(soup, 'script', 'src', local_dir)
+        self.replace_local_urls(soup, 'link', 'href', local_dir)
         self.replace_style_tags(soup)
-        self.replace_local_urls(soup, 'a', 'href')
+        self.replace_local_urls(soup, 'a', 'href', local_dir)
+        self.replace_onclick(soup)
 
     def load_tabs(self, soup: BeautifulSoup):
         tab_url = '/webapps/portal/execute/tabs/tabAction'
         full_url = base_url + tab_url
         for script in soup.find_all('script', text=True):
             script = script.text
-            if '/webapps/portal/execute/tabs/tabAction' in script:
+            if tab_url in script:
                 div_id = re.search(r"\$\('([^']*)'\)", script).group(1)
                 parameters = re.search(r"parameters: '([^,']*)',", script).group(1)
                 data = urllib.parse.parse_qs(parameters)
@@ -164,10 +170,11 @@ class PageCopy(Downloader):
                 course_information_soup = Utils.soup(string=course_information)
                 soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
 
-    @staticmethod
-    def remove_scripts(soup: BeautifulSoup):
-        allowed_scripts = ['fastinit.js', 'prototype.js', 'page.js']
-        allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController']
+    def remove_scripts(self, soup: BeautifulSoup):
+        allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'ngui', 'mygrades.js',
+                           'effects.js', 'grade_assignment.js', 'inline-grading']
+        allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController', 'mygrades', 'gradeAssignment',
+                            'collapsiblelist', 'postInit']
         for script in soup.find_all('script'):
             if script.has_attr('src'):
                 # Keep allowed scripts
@@ -180,11 +187,38 @@ class PageCopy(Downloader):
                 # Keep lines containing allowed keywords
                 if contains_allowed_keyword(script.text):
                     lines = script.text.split('\n')
-                    allowed_lines = [line.strip() for line in lines if contains_allowed_keyword(line)]
+                    allowed_lines = [self.rewrite_line(line) for line in lines if contains_allowed_keyword(line)]
                     new_script = '\n'.join(allowed_lines)
                     script.string.replace_with(new_script)
                 else:
                     script.decompose()
+        # Add fake DWR to prevent errors
+        self.add_fake_dwr(soup)
+
+    def rewrite_line(self, line: str):
+        line = line.strip()
+        # Special case for grade assignments
+        if 'gradeAssignment.init' in line:
+            def url_replace(match):
+                url = self.strip_base_url(match.group(2))
+                path = self.download_local_file(url)[1:]
+                return match.group(1) + path + match.group(3)
+
+            line = re.sub(r'("downloadUrl":")(.*?)(",)', url_replace, line)
+        return line
+
+    @staticmethod
+    def add_fake_dwr(soup):
+        script = soup.new_tag('script')
+        script.string = '''
+        var UserDataDWRFacade = {
+            getStringPermScope: function(){},
+            setStringPermScope: function(){},
+            getStringTempScope: function(){},
+            setStringTempScope: function(){}
+        }
+        '''
+        soup.append(script)
 
     @staticmethod
     def cleanup_page(soup: BeautifulSoup):
@@ -206,7 +240,12 @@ class PageCopy(Downloader):
         decompose(soup.find_all('div', id='actionbar'))
         decompose(soup.find_all('div', id='module:_28_1'))  # Course Catalogue
         decompose(soup.find_all('div', id='module:_493_1'))  # Search course catalogue
-        decompose(soup.find_all('div', id='copyright'))
+        decompose(soup.find_all('div', id='copyright'))  # Copyright at page bottom
+        decompose(soup.find_all('div', class_='taskbuttondiv_wrapper'))  # Task submission buttons
+        decompose(soup.find_all('div', id='step2'))  # Assignment submission
+        decompose(soup.find_all('div', id='step3'))  # Add comments
+        decompose(soup.find_all('div', class_='submitStepBottom'))  # Assignment submission buttons
+        decompose(soup.find_all('div', id='iconLegendLinkDiv'))  # Icon legend
 
         def decompose_url(url_part):
             for a in soup.find_all('a', {'href': True}):
@@ -229,22 +268,40 @@ class PageCopy(Downloader):
             grades.find('a')['href'] = 'Grades.html'
             grades.find('span').string.replace_with('Grades')
 
-    def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str):
+    def replace_onclick(self, soup):
+        for a in soup.find_all('a', {'onclick': True}):
+            if 'mygrades.loadContentFrame' in a['onclick']:
+                href = re.search(r"mygrades.loadContentFrame\('(.*)'\)", a['onclick']).group(1)
+                path = self.download_local_file(href)[1:]
+                a['href'] = path
+                del a['onclick']
+            elif 'gradeAssignment.inlineView' in a['onclick']:
+                del a['href']
+                del a['onclick']
+
+    def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str, url_dir: str):
         for element in soup.find_all(tag, {attr: True}):
             url = self.strip_base_url(element[attr].strip())
             # Only replace local urls
             if self.is_local_url(url):
-                if not url.startswith('/'):
-                    url = '/' + url
+                if not url.startswith('/') and url not in ['Courses.html', 'Organisations.html', 'Grades.html']:
+                    url = f'{url_dir}/{url}'
                 path = self.download_local_file(url)[1:]
                 element[attr] = path
 
     def replace_style_tags(self, soup: BeautifulSoup):
+        # Replace local css
         for tag in soup.find_all('style', {'type': 'text/css'}):
             new_css = self.replace_css_urls(tag.text)
             tag.string.replace_with(new_css)
 
+        # Replace inline css
+        for tag in soup.find_all(True, {'style': True}):
+            new_style = self.replace_css_urls(tag['style'])
+            tag['style'] = new_style
+
     def download_local_file(self, url: str):
+        # TODO: Order files by course
         # Check if url already has been downloaded
         if url in self.url_dict:
             return self.url_dict[url]
@@ -290,7 +347,8 @@ class PageCopy(Downloader):
 
             # HTML pages need te be processed
             if is_html:
-                self.process_page(soup)
+                url_dir = posixpath.dirname(url)
+                self.process_page(soup, url_dir)
                 Utils.write(full_path, soup.prettify())
             # CSS urls need to be rewritten
             elif os.path.splitext(full_path)[1] == '.css':
@@ -327,7 +385,7 @@ class PageCopy(Downloader):
                 done = True
         return local_path
 
-    def replace_css_urls(self, css: str, folder: str = ''):
+    def replace_css_urls(self, css: str, folder: str = '/'):
         def url_replace(match):
             url = match.group(2).strip()
             url = self.strip_base_url(url)
@@ -335,15 +393,8 @@ class PageCopy(Downloader):
                 return match.group(0)
             url = posixpath.normpath(posixpath.join(folder, url))
             path = self.download_local_file(url)
-            if folder == '':
-                path = path[1:]
-            else:
-                commonpath = posixpath.commonpath([folder, path])
-                if commonpath != '/':
-                    path = path.replace(commonpath, '')[1:]
-                else:
-                    path = '../' * folder.count('/') + path[1:]
-            return match.group(1) + path + match.group(3)
+            relative_path = posixpath.relpath(path, folder)
+            return match.group(1) + relative_path + match.group(3)
 
         result = re.sub(r"(url\(['\"]?)(.*?)(['\"]?\))", url_replace, css)
         return result
@@ -383,9 +434,14 @@ class PageCopy(Downloader):
 
     @staticmethod
     def url_to_path(url: str):
-        if '#' in url:
-            url = url[:url.find('#')]
-        if '?' in url:
-            url = url[:url.find('?')]
-        url = urllib.parse.unquote(url)
-        return url
+        if '/webapps/assignment/download' in url:
+            filename = re.search(r"fileName=([^&]*)", url).group(1)
+            path = f'/assignments/{filename}'
+        else:
+            if '#' in url:
+                url = url[:url.find('#')]
+            if '?' in url:
+                url = url[:url.find('?')]
+            path = url
+        path = urllib.parse.unquote(path)
+        return path
