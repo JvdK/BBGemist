@@ -122,7 +122,7 @@ class PageCopy(Downloader):
         print("Retrieving courses...")
         page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         r = self.session.get(page_url)
-        url_dir = posixpath.dirname(self.strip_base_url(r.url))
+        url_dir = posixpath.dirname(self.strip_url(r.url))
         soup = Utils.soup(string=r.text)
         logging.info("Retrieved courses page")
         self.process_page(soup, url_dir)
@@ -181,6 +181,7 @@ class PageCopy(Downloader):
                 soup.find('div', id='tree').replace_with(tree_soup)
 
     def remove_scripts(self, soup: BeautifulSoup):
+        # TODO: Don't include all ngui scripts
         allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'ngui', 'mygrades.js',
                            'effects.js', 'grade_assignment.js', 'inline-grading']
         allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController', 'mygrades', 'gradeAssignment',
@@ -210,7 +211,7 @@ class PageCopy(Downloader):
         # Special case for grade assignments
         if 'gradeAssignment.init' in line:
             def url_replace(match):
-                url = self.strip_base_url(match.group(2))
+                url = self.strip_url(match.group(2))
                 path = self.download_local_file(url)[1:]
                 return match.group(1) + path + match.group(3)
 
@@ -314,7 +315,7 @@ class PageCopy(Downloader):
 
     def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str, url_dir: str):
         for element in soup.find_all(tag, {attr: True}):
-            url = self.strip_base_url(element[attr].strip())
+            url = self.strip_url(element[attr].strip())
             # Only replace local urls
             if self.is_local_url(url):
                 if not url.startswith('/') and url not in ['Courses.html', 'Organisations.html', 'Grades.html']:
@@ -335,6 +336,7 @@ class PageCopy(Downloader):
 
     def download_local_file(self, url: str):
         # TODO: Order files by course
+        url = self.strip_url(url)
         # Check if url already has been downloaded
         if url in self.url_dict:
             return self.url_dict[url]
@@ -347,7 +349,7 @@ class PageCopy(Downloader):
             return local_path
 
         with self.session.get(base_url + url, stream=True) as r:
-            url = self.strip_base_url(r.url)
+            url = self.strip_url(r.url)
 
             # Check if (potentially redirected) url already has been downloaded
             if url in self.url_dict or any(redirect.url in self.url_dict for redirect in r.history):
@@ -399,7 +401,7 @@ class PageCopy(Downloader):
                     # Use chunks in case of very large files
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
-
+            # TODO: Readd hash to url
             return local_path
 
     def generate_page_title(self, soup):
@@ -425,7 +427,7 @@ class PageCopy(Downloader):
     def replace_css_urls(self, css: str, url_dir: str, local_dir: str = '/'):
         def url_replace(match):
             url = match.group(2).strip()
-            url = self.strip_base_url(url)
+            url = self.strip_url(url)
             if not self.is_local_url(url):
                 return match.group(0)
             full_url = posixpath.normpath(posixpath.join(url_dir, url))
@@ -442,7 +444,7 @@ class PageCopy(Downloader):
         if request:
             # Store the redirected urls as well
             for redirect in request.history:
-                redirected_url = self.strip_base_url(redirect.url)
+                redirected_url = self.strip_url(redirect.url)
                 self.url_dict[redirected_url] = path
 
     @staticmethod
@@ -465,7 +467,7 @@ class PageCopy(Downloader):
         )
 
     @staticmethod
-    def strip_base_url(url: str):
+    def strip_url(url: str):
         if url.startswith(base_url):
             url = url[len(base_url):]
         return url
