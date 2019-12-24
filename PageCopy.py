@@ -122,7 +122,7 @@ class PageCopy(Downloader):
         print("Retrieving courses...")
         page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
         r = self.session.get(page_url)
-        url_dir = posixpath.dirname(self.strip_url(r.url))
+        url_dir = posixpath.dirname(self.strip_base_url(r.url))
         soup = Utils.soup(string=r.text)
         logging.info("Retrieved courses page")
         self.process_page(soup, url_dir)
@@ -211,7 +211,7 @@ class PageCopy(Downloader):
         # Special case for grade assignments
         if 'gradeAssignment.init' in line:
             def url_replace(match):
-                url = self.strip_url(match.group(2))
+                url = match.group(2)
                 path = self.download_local_file(url)[1:]
                 return match.group(1) + path + match.group(3)
 
@@ -300,8 +300,6 @@ class PageCopy(Downloader):
         decompose_url('groupContentList')  # Groups
         decompose_url('groupInventoryList')  # Group management
 
-        # TODO: Edit mode pages
-
         def delete_attribute(tags, attribute):
             for tag in tags:
                 del tag[attribute]
@@ -346,7 +344,7 @@ class PageCopy(Downloader):
 
     def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str, url_dir: str):
         for element in soup.find_all(tag, {attr: True}):
-            url = self.strip_url(element[attr].strip())
+            url = self.strip_base_url(element[attr].strip())
             # Only replace local urls
             if self.is_local_url(url):
                 if not url.startswith('/') and url not in ['Courses.html', 'Organisations.html', 'Grades.html']:
@@ -367,7 +365,7 @@ class PageCopy(Downloader):
 
     def download_local_file(self, url: str):
         # TODO: Order files by course
-        url = self.strip_url(url)
+        url, fragment = self.split_url(url)
         # Check if url already has been downloaded
         if url in self.url_dict:
             return self.url_dict[url]
@@ -380,7 +378,7 @@ class PageCopy(Downloader):
             return local_path
 
         with self.session.get(base_url + url, stream=True) as r:
-            url = self.strip_url(r.url)
+            url, fragment = self.split_url(r.url)
 
             # Check if (potentially redirected) url already has been downloaded
             if url in self.url_dict or any(redirect.url in self.url_dict for redirect in r.history):
@@ -432,8 +430,8 @@ class PageCopy(Downloader):
                     # Use chunks in case of very large files
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
-            # TODO: Readd hash to url
-            return local_path
+
+            return local_path + fragment
 
     def generate_page_title(self, soup):
         title = soup.find('title')
@@ -458,7 +456,7 @@ class PageCopy(Downloader):
     def replace_css_urls(self, css: str, url_dir: str, local_dir: str = '/'):
         def url_replace(match):
             url = match.group(2).strip()
-            url = self.strip_url(url)
+            url = self.strip_base_url(url)
             if not self.is_local_url(url):
                 return match.group(0)
             full_url = posixpath.normpath(posixpath.join(url_dir, url))
@@ -475,7 +473,7 @@ class PageCopy(Downloader):
         if request:
             # Store the redirected urls as well
             for redirect in request.history:
-                redirected_url = self.strip_url(redirect.url)
+                redirected_url = self.split_url(redirect.url)[0]
                 self.url_dict[redirected_url] = path
 
     @staticmethod
@@ -498,9 +496,47 @@ class PageCopy(Downloader):
         )
 
     @staticmethod
-    def strip_url(url: str):
+    def strip_base_url(url: str):
         if url.startswith(base_url):
             url = url[len(base_url):]
+        return url
+
+    @staticmethod
+    def split_url(url: str):
+        url = PageCopy.strip_base_url(url)
+        fragment = ''
+        fragment_index = url.find('#')
+        if fragment_index > 0:
+            url, fragment = url[:fragment_index], url[fragment_index:]
+        if '?' in url:
+            url = PageCopy.sanitize_url_params(url)
+        return url, fragment
+
+    @staticmethod
+    def sanitize_url_params(url: str):
+        u = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(u.query)
+
+        if 'startIndex' in query:
+            if 'numResults' in query:
+                num_results = int(query['numResults'][0])
+            else:
+                num_results = 25
+            query['pageIndex'] = [str(int(query['startIndex'][0]) / num_results)]
+            del query['startIndex']
+
+        if 'pageIndex' in query and query['pageIndex'][0] == '1':
+            del query['pageIndex']
+
+        unnecessary_params = ['sortCol', 'sortDir', 'numResults', 'editPaging', 'toolAvail', 'groupCode',
+                              'toggleType', 'toggle_mode', 'mode', 'forum_view']
+        for param in unnecessary_params:
+            if param in query:
+                del query[param]
+
+        # noinspection PyProtectedMember
+        u = u._replace(query=urllib.parse.urlencode(query, True, quote_via=urllib.parse.quote))
+        url = urllib.parse.urlunparse(u)
         return url
 
     @staticmethod
