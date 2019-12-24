@@ -237,60 +237,91 @@ class PageCopy(Downloader):
             for tag in tags:
                 tag.decompose()
 
-        decompose(soup.find_all(class_='hideFromQuickLinks'))
-        decompose(soup.find_all(class_='edit_controls'))
-        decompose(soup.find_all('div', id='quickLinksLightboxDiv'))
-        decompose(soup.find_all('div', id='quick_links_wrap'))
-        decompose(soup.find_all('div', class_='global-nav-bar-wrap'))
-        decompose(soup.find_all('div', id='breadcrumb_controls_id'))
-        decompose(soup.find_all('div', class_='courseArrow'))
-        decompose(soup.find_all('div', class_='actionBarMicro'))
-        decompose(soup.find_all('div', class_='localViewToggle'))
-        decompose(soup.find_all('div', id='controlPanelPalette'))
-        decompose(soup.find_all('div', class_='eudModule'))  # Home page modules
-        decompose(soup.find_all('div', id='actionbar'))  # Action bar
-        decompose(soup.find_all('div', id='module:_28_1'))  # Course Catalogue
-        decompose(soup.find_all('div', id='module:_493_1'))  # Search course catalogue
-        decompose(soup.find_all('div', id='copyright'))  # Copyright at page bottom
-        decompose(soup.find_all('div', class_='taskbuttondiv_wrapper'))  # Task submission buttons
-        decompose(soup.find_all('div', id='step2'))  # Assignment submission
-        decompose(soup.find_all('div', id='step3'))  # Add comments
-        decompose(soup.find_all('div', class_='submitStepBottom'))  # Assignment submission buttons
-        decompose(soup.find_all('div', id='iconLegendLinkDiv'))  # Icon legend
-        decompose(soup.find_all('div', class_='containerOptions'))  # Action bar options
-        decompose(soup.find_all('div', class_='contextMenuContainer'))  # Context menu
-        decompose(soup.find_all('div', id='listContainer_showAllButton'))  # Discussion Board show all
-        decompose(soup.find_all('div', id='listContainer_openpaging'))  # Discussion Board edit
-        decompose(soup.find_all('div', id='listContainer_editpaging'))  # Discussion Board edit
-        decompose(soup.find_all('ul', id='listContainer_nav_batch_top'))  # File exchange delete
-        decompose(soup.find_all('ul', id='listContainer_nav_batch_bot'))  # File exchange delete
-        decompose(soup.find_all('div', id='top_list_action_bar'))  # Discussion Board action bar
-        decompose(soup.find_all('div', id='bottom_list_action_bar'))  # Discussion Board action bar
+        decompose(soup.find_all(class_='hideFromQuickLinks'))  # Quick Links
+        decompose(soup.find_all(class_='edit_controls'))  # Edit settings
+        decompose(soup.find_all(class_='contextMenuContainer'))  # Context menu
+        decompose(soup.find_all(id='quickLinksLightboxDiv'))  # Quick links
+        decompose(soup.find_all(id='quick_links_wrap'))  # Quick links
+        decompose(soup.find_all(class_='global-nav-bar-wrap'))  # User menu
+        decompose(soup.find_all(id='breadcrumb_controls_id'))  # Navigation helper
+        decompose(soup.find_all(class_='courseArrow'))  # Courses menu
+        decompose(soup.find_all(class_='actionBarMicro'))  # Courses menu
+        decompose(soup.find_all(class_='localViewToggle'))  # Courses menu
+        decompose(soup.find_all(id='controlPanelPalette'))  # Course management panel
+        decompose(soup.find_all(class_='eudModule'))  # Home page modules
+        decompose(soup.find_all(id='actionbar'))  # Action bar
+        decompose(soup.find_all(class_='subActionBar'))  # Action bar
+        decompose(soup.find_all(class_='rumble'))  # Action bar
+        decompose(soup.find_all(class_='rumble_top'))  # Action bar
+        decompose(soup.find_all(class_='dbThreadFooter'))  # Thread footer
+        decompose(soup.find_all(id='module:_28_1'))  # Course Catalogue
+        decompose(soup.find_all(id='module:_493_1'))  # Search course catalogue
+        decompose(soup.find_all(id='copyright'))  # Copyright at page bottom
+        decompose(soup.find_all(class_='taskbuttondiv_wrapper'))  # Task submission buttons
+        decompose(soup.find_all(id='step2'))  # Assignment submission
+        decompose(soup.find_all(id='step3'))  # Add comments
+        decompose(soup.find_all(class_='submitStepBottom'))  # Assignment submission buttons
+        decompose(soup.find_all(id='iconLegendLinkDiv'))  # Icon legend
+        decompose(soup.find_all(class_='containerOptions'))  # Action bar options
+        decompose(soup.find_all(id='listContainer_showAllButton'))  # Discussion Board show all
+        decompose(soup.find_all(id='listContainer_openpaging'))  # Discussion Board edit
+        decompose(soup.find_all(id='listContainer_editpaging'))  # Discussion Board edit
+        decompose(soup.find_all(id='listContainer_nav_batch_top'))  # File exchange delete
+        decompose(soup.find_all(id='listContainer_nav_batch_bot'))  # File exchange delete
+        decompose(soup.find_all(id='listContainer_showAllButton'))  # Discussion board show all
+        decompose(soup.find_all(id='listContainer_openpaging'))  # Discussion board edit paging
+        decompose(soup.find_all(id='top_list_action_bar'))  # Discussion Board action bar
+        decompose(soup.find_all(id='bottom_list_action_bar'))  # Discussion Board action bar
+        decompose(soup.find_all(class_='renameCourseToc'))  # Rename menu
+        decompose(soup.find_all(id='moduleReorderControls'))  # Module reordering
+        decompose(soup.find_all(id='reorderControlsannouncementList'))  # Announcement reordering
+        decompose(soup.find_all(class_='quickAddPal'))  # Adding items to course
+        decompose(soup.find_all(id='courseMenuPalette_reorderControls'))  # Course menu reordering
+        decompose(soup.find_all(class_='reorder'))  # Course menu reordering
+        decompose(soup.find_all('h2', class_='navDivider', text=re.compile('Course Management')))  # Course management
+        decompose(soup.find_all('input', type='hidden'))  # Hidden inputs
 
         def decompose_url(url_part):
             for a in soup.find_all('a', {'href': True}):
                 if url_part in a['href']:
+                    parent = a.parent
                     a.decompose()
+                    while parent and not parent.contents:
+                        new_parent = parent.parent
+                        parent.decompose()
+                        parent = new_parent
 
         decompose_url('tool_id=_1842_1')  # Unenroll
+        decompose_url('tool_id=_134_1')  # Email
         decompose_url('tool_id=_115_1')  # Email
         decompose_url('displayEmail')  # Email
         decompose_url('viewExtendedHelp')  # Help pages
+        decompose_url('launchAssessment')  # Assessments
+        decompose_url('groupContentList')  # Groups
+        decompose_url('groupInventoryList')  # Group management
 
         # TODO: Edit mode pages
 
-        def del_href(tags):
+        def delete_attribute(tags, attribute):
             for tag in tags:
-                del tag['href']
+                del tag[attribute]
 
-        del_href(soup.find_all('a', class_='sortheader'))  # Column sorting
+        delete_attribute(soup.find_all('a', class_='sortheader'), 'href')  # Column sorting
 
-        def del_href_url(url_part):
+        def delete_url(url_part):
             for a in soup.find_all('a', {'href': True}):
                 if url_part in a['href']:
                     del a['href']
 
-        del_href_url('oslt-signUpList-bb_bb60')  # Sign up lists
+        delete_url('oslt-signUpList-bb_bb60')  # Sign up lists
+
+        def remove_class(class_):
+            for tag in soup.find_all(class_=class_):
+                tag['class'].remove(class_)
+
+        remove_class('ineditmode')  # Edit mode markup
+        remove_class('reorderableModule')  # Edit mode markup
+        remove_class('dragHandle')  # Edit mode markup
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
