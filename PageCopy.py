@@ -180,6 +180,8 @@ class PageCopy(Downloader):
                 r = self.session.get(base_url + tree_url)
                 tree_soup = Utils.soup(string=r.text)
                 soup.find('div', id='tree').replace_with(tree_soup)
+        for p in soup.find_all('p', class_='backLink'):
+            p.a['href'] = 'javascript:history.go(-1)'
 
     def remove_scripts(self, soup: BeautifulSoup):
         # TODO: Don't include all ngui scripts
