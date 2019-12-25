@@ -176,17 +176,29 @@ class PageCopy(Downloader):
         for script in soup.find_all('script', text=True):
             script = script.text
             if 'treeUrl' in script:
-                tree_url = re.search(r'var treeUrl = "([^"]*)";', script).group(1)
-                r = self.session.get(base_url + tree_url)
+                tree_url = base_url + re.search(r'var treeUrl = "([^"]*)";', script).group(1)
+                r = self.session.get(tree_url)
                 tree_soup = Utils.soup(string=r.text)
                 soup.find('div', id='tree').replace_with(tree_soup)
+                message_url = base_url + re.search(r'var messageUrl = "([^"]*)";', script).group(1)
+                u, query = self.parse_query(message_url)
+                for div in soup.find_all('div', class_='dbThreadMessage'):
+                    message_id = re.search(r'message_(.*)', div['id']).group(1)
+                    # noinspection PyTypeChecker
+                    query['message_id'] = message_id
+                    url = self.unparse_query(u, query)
+                    r = self.session.get(url)
+                    message_soup = Utils.soup(string=r.text)
+                    div.clear()
+                    div.append(message_soup)
+                    del div['style']
         for p in soup.find_all('p', class_='backLink'):
             p.a['href'] = 'javascript:history.go(-1)'
 
     def remove_scripts(self, soup: BeautifulSoup):
         # TODO: Don't include all ngui scripts
         allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'ngui', 'mygrades.js',
-                           'effects.js', 'grade_assignment.js', 'inline-grading']
+                           'effects.js', 'grade_assignment.js', 'inline-grading', 'discussionboard']
         allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController', 'mygrades', 'gradeAssignment',
                             'collapsiblelist', 'postInit', 'var courseId']
         for script in soup.find_all('script'):
@@ -346,8 +358,7 @@ class PageCopy(Downloader):
                 url = f'/webapps/assignment/inlineView?course_id={course_id}&file_id={file_id}&attempt_id={attempt_id}'
                 if 'gradeAssignment.inlineViewGroupFile' in a['onclick']:
                     url += '&group=true'
-                with self.session.get(base_url + url) as r:
-                    json = r.text
+                json = self.session.get(base_url + url).text
                 # TODO: Selected does not work
                 a['onclick'] = f"gradeAssignment.handleInlineViewResponse(JSON.parse('{json}'));"
 
@@ -530,8 +541,7 @@ class PageCopy(Downloader):
 
     @staticmethod
     def sanitize_url_params(url: str):
-        u = urllib.parse.urlparse(url)
-        query = urllib.parse.parse_qs(u.query)
+        u, query = PageCopy.parse_query(url)
 
         #  Convert indexing using startIndex to indexing using pageIndex
         if 'startIndex' in query:
@@ -569,10 +579,7 @@ class PageCopy(Downloader):
             if param in query and query[param][0] in values:
                 del query[param]
 
-        # noinspection PyProtectedMember,PyTypeChecker
-        u = u._replace(query=urllib.parse.urlencode(sorted(query.items()), True, quote_via=urllib.parse.quote))
-        url = urllib.parse.urlunparse(u)
-        return url
+        return PageCopy.unparse_query(u, query)
 
     @staticmethod
     def url_to_path(url: str):
@@ -587,3 +594,16 @@ class PageCopy(Downloader):
             path = url
         path = urllib.parse.unquote(path)
         return path
+
+    @staticmethod
+    def parse_query(url: str):
+        u = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(u.query)
+        return u, query
+
+    @staticmethod
+    def unparse_query(u, query):
+        # noinspection PyProtectedMember,PyTypeChecker
+        u = u._replace(query=urllib.parse.urlencode(sorted(query.items()), True, quote_via=urllib.parse.quote))
+        url = urllib.parse.urlunparse(u)
+        return url
