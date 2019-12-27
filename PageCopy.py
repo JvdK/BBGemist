@@ -6,7 +6,8 @@ import urllib.parse
 from getpass import getpass
 
 import requests
-from bs4 import BeautifulSoup
+# noinspection PyProtectedMember
+from bs4 import BeautifulSoup, Comment
 from requests import Response
 
 import Config
@@ -25,7 +26,7 @@ class PageCopy(Downloader):
         'Organisations.html': '/Organisations.html',
         'Grades.html': '/Grades.html'
     }
-    page_titles = set()
+    page_titles = {}
 
     def __init__(self):
         logging.info("--- Initialising Downloader ---")
@@ -126,6 +127,7 @@ class PageCopy(Downloader):
         soup = Utils.soup(string=r.text)
         logging.info("Retrieved courses page")
         self.process_page(soup, url_dir)
+        soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
         Utils.write(website_path + "Courses.html", soup.prettify())
         logging.info("Stored courses page")
 
@@ -172,7 +174,6 @@ class PageCopy(Downloader):
                 soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
 
     def load_discussion_board(self, soup: BeautifulSoup):
-        # TODO: Load messages
         for script in soup.find_all('script', text=True):
             script = script.text
             if 'treeUrl' in script:
@@ -192,13 +193,11 @@ class PageCopy(Downloader):
                     div.clear()
                     div.append(message_soup)
                     del div['style']
-        for p in soup.find_all('p', class_='backLink'):
-            p.a['href'] = 'javascript:history.go(-1)'
 
     def remove_scripts(self, soup: BeautifulSoup):
-        # TODO: Don't include all ngui scripts
-        allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'ngui', 'mygrades.js',
-                           'effects.js', 'grade_assignment.js', 'inline-grading', 'discussionboard']
+        allowed_scripts = ['cdn.js', 'fastinit.js', 'prototype.js', 'actionPanel.js', 'coursemenu.js',
+                           'globalNavigation.js', 'lightbox.js', 'page.js', 'tree.js', 'mygrades.js', 'effects.js',
+                           'grade_assignment.js', 'inline-grading', 'discussionboard']
         allowed_keywords = ['page.bundle.addKey', 'PageMenuToggler', 'PaletteController', 'mygrades', 'gradeAssignment',
                             'collapsiblelist', 'postInit', 'var courseId']
         for script in soup.find_all('script'):
@@ -266,8 +265,6 @@ class PageCopy(Downloader):
         decompose(soup.find_all(class_='eudModule'))  # Home page modules
         decompose(soup.find_all(id='actionbar'))  # Action bar
         decompose(soup.find_all(class_='subActionBar'))  # Action bar
-        decompose(soup.find_all(class_='rumble'))  # Action bar
-        decompose(soup.find_all(class_='rumble_top'))  # Action bar
         decompose(soup.find_all(class_='dbThreadFooter'))  # Thread footer
         decompose(soup.find_all(id='module:_28_1'))  # Course Catalogue
         decompose(soup.find_all(id='module:_493_1'))  # Search course catalogue
@@ -278,18 +275,31 @@ class PageCopy(Downloader):
         decompose(soup.find_all(class_='submitStepBottom'))  # Assignment submission buttons
         decompose(soup.find_all(id='iconLegendLinkDiv'))  # Icon legend
         decompose(soup.find_all(class_='containerOptions'))  # Action bar options
-        decompose(soup.find_all(id=re.compile('showAllButton', re.IGNORECASE)))  # Discussion Board show all
-        decompose(soup.find_all(id=re.compile('openpaging', re.IGNORECASE)))  # Discussion Board edit
-        decompose(soup.find_all(id=re.compile('editpaging', re.IGNORECASE)))  # Discussion Board edit
-        decompose(soup.find_all(id=re.compile('nav_batch_top', re.IGNORECASE)))  # File exchange delete
-        decompose(soup.find_all(id=re.compile('nav_batch_bot', re.IGNORECASE)))  # File exchange delete
-        decompose(soup.find_all(id=re.compile('reorderControls', re.IGNORECASE)))  # Reordering
+        decompose(soup.find_all(id=re.compile(r'showAllButton', re.IGNORECASE)))  # Discussion Board show all
+        decompose(soup.find_all(id=re.compile(r'openpaging', re.IGNORECASE)))  # Discussion Board edit
+        decompose(soup.find_all(id=re.compile(r'editpaging', re.IGNORECASE)))  # Discussion Board edit
+        decompose(soup.find_all(id=re.compile(r'collectAction', re.IGNORECASE)))  # Discussion Board Collect
+        decompose(soup.find_all(id=re.compile(r'removeListAction', re.IGNORECASE)))  # Discussion Board Remove
+        decompose(soup.find_all(id=re.compile(r'reorderControls', re.IGNORECASE)))  # Reordering
         decompose(soup.find_all(id='top_list_action_bar'))  # Discussion Board action bar
         decompose(soup.find_all(id='bottom_list_action_bar'))  # Discussion Board action bar
         decompose(soup.find_all(class_='renameCourseToc'))  # Rename menu
         decompose(soup.find_all(class_='quickAddPal'))  # Adding items to course
         decompose(soup.find_all(class_='reorder'))  # Course menu reordering
-        decompose(soup.find_all('h2', class_='navDivider', text=re.compile('Course Management')))  # Course management
+        decompose(soup.find_all(class_='receiptDate'))  # Date of error
+        decompose(soup.find_all(class_='secondaryControl'))  # Refresh buttons
+        decompose(soup.find_all('h2', class_='navDivider', text=re.compile(r'Course Management')))  # Course management
+        decompose(soup.find_all('li', class_='sub'))  # Thread actions
+        decompose(soup.find_all(onclick=re.compile(r'contentList\.toggleDetails')))  # Contentlist edit toggle
+        decompose(soup.find_all(id='threadArea'))  # Thread navigation
+        decompose(soup.find_all(class_='backLink'))  # Remove backlinks to avoid duplicates
+        decompose(soup.find_all(class_='captionText'))  # Error IDs
+
+        def unwrap(tags):
+            for tag in tags:
+                tag.unwrap()
+
+        unwrap(soup.find_all('input', type='hidden'))
 
         def decompose_url(url_part):
             for a in soup.find_all('a', {'href': True}):
@@ -323,14 +333,25 @@ class PageCopy(Downloader):
                     del a['href']
 
         delete_url('oslt-signUpList-bb_bb60')  # Sign up lists
+        delete_url('eph-ephorus-assignment-bb_bb60')  # Ephorus assignments
 
-        def remove_class(class_):
-            for tag in soup.find_all(class_=class_):
-                tag['class'].remove(class_)
+        def replace_class(old_class, new_classes=None):
+            for tag in soup.find_all(class_=old_class):
+                tag['class'].remove(old_class)
+                if new_classes:
+                    tag['class'].extend(new_classes)
+                if not tag['class']:
+                    del tag['class']
 
-        remove_class('ineditmode')  # Edit mode markup
-        remove_class('reorderableModule')  # Edit mode markup
-        remove_class('dragHandle')  # Edit mode markup
+        replace_class('ineditmode')  # Edit mode markup
+        replace_class('contentBox-edit')  # Edit mode markup
+        replace_class('reorderableModule')  # Edit mode markup
+        replace_class('reorderable')  # Edit mode markup
+        replace_class('dragHandle')  # Edit mode markup
+        replace_class('dndHandle')  # Edit mode markup
+        replace_class('buildList', ['announcementList', 'announcementList-read'])  # Announcements edit mode
+        replace_class('liItem', ['read'])  # Contentlist edit mode
+        replace_class('ok')  # Avoids duplicates
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
@@ -360,7 +381,7 @@ class PageCopy(Downloader):
                     url += '&group=true'
                 json = self.session.get(base_url + url).text
                 # TODO: Selected does not work
-                a['onclick'] = f"gradeAssignment.handleInlineViewResponse(JSON.parse('{json}'));"
+                a['onclick'] = f'gradeAssignment.handleInlineViewResponse({json});'
 
     def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str, url_dir: str):
         for element in soup.find_all(tag, {attr: True}):
@@ -390,7 +411,7 @@ class PageCopy(Downloader):
         if url in self.url_dict:
             return self.url_dict[url]
 
-        # TODO: Doesn't work for resubmissions with the same name
+        # TODO: Doesn't work for resubmission files with the same name
         # Check if file already exists
         local_path = self.url_to_path(url)
         full_path = self.get_full_path(local_path)
@@ -424,11 +445,15 @@ class PageCopy(Downloader):
             if is_html:
                 soup = Utils.soup(string=r.text)
                 if r.status_code != 404:
-                    local_path = self.generate_page_title(soup)
+                    local_path, exists = self.generate_page_title(Utils.soup(string=r.text))
+                    if exists:
+                        if Config.DEBUG:
+                            print(f'Duplicate : {local_path}')
+                        self.update_url_dict(local_path, url=url, request=r)
+                        return local_path
                     full_path = self.get_full_path(local_path)
 
             print(f'Retrieving: {local_path}')
-
             self.update_url_dict(local_path, url=url, request=r)
 
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -436,9 +461,10 @@ class PageCopy(Downloader):
             # HTML pages need te be processed
             if is_html:
                 if Config.DEBUG:
+                    debug_path = self.get_full_path('/debug' + local_path)[:-5] + '.link'
+                    os.makedirs(os.path.dirname(debug_path), exist_ok=True)
                     urls = {'old_url': base_url + self.strip_base_url(full_url), 'new_url': base_url + url}
-                    Utils.write(full_path[:-5] + '.original.html', soup.prettify())
-                    Utils.write(full_path[:-5] + '.link', urls)
+                    Utils.write(debug_path, urls)
                 url_dir = posixpath.dirname(url)
                 self.process_page(soup, url_dir)
                 Utils.write(full_path, soup.prettify())
@@ -459,24 +485,51 @@ class PageCopy(Downloader):
             return local_path + fragment
 
     def generate_page_title(self, soup):
-        title = soup.find('title')
-        if title:
-            # Remove illegal filename characters
-            title = re.sub(r'[<>:"/\\|?*]', '', title.text)
+        comment_tag = soup.contents[1]
+        edit_mode = isinstance(comment_tag, Comment) and 'listContentEditable.jsp' in str(comment_tag)
+
+        navigation_tag = soup.find('div', class_='path', role='navigation')
+        if navigation_tag:
+            title = ' - '.join(navigation_tag.stripped_strings)
         else:
-            title = 'unknown'
+            title_tag = soup.find('title')
+            if title_tag:
+                title = title_tag.text
+            else:
+                title = 'unknown'
+        if edit_mode:
+            title += ' (edit mode)'
+        # Remove illegal filename characters
+        title = re.sub(r'[<>:"/\\|?*]', '', title)
+
+        self.remove_scripts(soup)
+        self.cleanup_page(soup)
+        soup = soup.prettify()
 
         local_path = None
+        max_length = 255
+        exists = False
         done = False
         counter = 0
         while not done:
             local_path = f'/{title}.html' if counter == 0 else f'/{title} ({counter}).html'
-            if local_path in self.page_titles:
-                counter += 1
+            if len(local_path) > max_length:
+                # Truncate title if too long
+                title = title[:max_length - len(local_path)]
+            elif local_path in self.page_titles:
+                if soup == self.page_titles[local_path]:
+                    exists = True
+                    done = True
+                else:
+                    counter += 1
             else:
-                self.page_titles.add(local_path)
+                self.page_titles[local_path] = soup
                 done = True
-        return local_path
+        if Config.DEBUG:
+            debug_path = self.get_full_path('/debug' + local_path)
+            os.makedirs(os.path.dirname(debug_path), exist_ok=True)
+            Utils.write(debug_path, soup)
+        return local_path, exists
 
     def replace_css_urls(self, css: str, url_dir: str, local_dir: str = '/'):
         def url_replace(match):
@@ -533,8 +586,6 @@ class PageCopy(Downloader):
         fragment_index = url.find('#')
         if fragment_index > 0:
             url, fragment = url[:fragment_index], url[fragment_index:]
-        if 'listContentEditable.jsp' in url:
-            url = url.replace('listContentEditable.jsp', 'listContent.jsp')
         if '?' in url:
             url = PageCopy.sanitize_url_params(url)
         return url, fragment
@@ -542,42 +593,15 @@ class PageCopy(Downloader):
     @staticmethod
     def sanitize_url_params(url: str):
         u, query = PageCopy.parse_query(url)
+        if 'toggle_mode' in query:
+            del query['toggle_mode']
 
-        #  Convert indexing using startIndex to indexing using pageIndex
-        if 'startIndex' in query:
-            if 'numResults' in query:
-                num_results = int(query['numResults'][0])
-            else:
-                num_results = 25
-            query['pageIndex'] = [str(int(query['startIndex'][0]) / num_results)]
-            del query['startIndex']
+        if 'mode' in query and query['mode'][0] in ['reset', 'view', 'cpview']:
+            del query['mode']
 
-        unnecessary_params = [
-            'sortCol',  # Remove sorting
-            'sortDir',  # Remove sorting
-            'numResults',  # Number of results to show, always 25
-            'editPaging',  # Edit paging settings
-            # 'toolAvail',
-            # 'groupCode',
-            # 'toggleType',
-            'toggle_mode',  # Read or edit forum
-            'forum_view',  # List or tree view forum
-            'context',  # Used for search announcements
-            'handle',  # Used for search announcements
-            'viewChoice',  # Used for search announcements
-            'callback',  # Used for grades
-        ]
-        for param in unnecessary_params:
-            if param in query:
-                del query[param]
-
-        unnecessary_param_values = {
-            'mode': ['reset', 'view'],  # These modes are unnecessary
-            'pageIndex': ['1'],  # A pageIndex of 1 is unnecessary
-        }
-        for param, values in unnecessary_param_values.items():
-            if param in query and query[param][0] in values:
-                del query[param]
+        if 'nav' in query and 'discussion_board_entry' in query['nav']:
+            query['nav'].remove('discussion_board_entry')
+            query['nav'].append('discussion_board')
 
         return PageCopy.unparse_query(u, query)
 
