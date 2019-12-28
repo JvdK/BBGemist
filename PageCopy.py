@@ -26,7 +26,8 @@ class PageCopy(Downloader):
         'Organisations.html': '/Organisations.html',
         'Grades.html': '/Grades.html'
     }
-    page_titles = {}
+    downloaded_pages = {}
+    navigation_stack = []
 
     def __init__(self):
         logging.info("--- Initialising Downloader ---")
@@ -405,7 +406,6 @@ class PageCopy(Downloader):
             tag['style'] = new_style
 
     def download_local_file(self, full_url: str):
-        # TODO: Order files by course
         url, fragment = self.split_url(full_url)
         # Check if url already has been downloaded
         if url in self.url_dict:
@@ -464,8 +464,15 @@ class PageCopy(Downloader):
                     os.makedirs(os.path.dirname(debug_path), exist_ok=True)
                     urls = {'old_url': base_url + self.strip_base_url(full_url), 'new_url': base_url + url}
                     Utils.write(debug_path, urls)
+                navigation_tag = soup.find('div', class_='path', role='navigation')
+                if navigation_tag:
+                    # Remove illegal path chars
+                    navigation_strings = map(lambda s: re.sub(r'[<>:"/\\|?*.]', '', s), navigation_tag.stripped_strings)
+                    self.navigation_stack.append('/'.join(navigation_strings))
                 url_dir = posixpath.dirname(url)
                 self.process_page(soup, url_dir)
+                if navigation_tag:
+                    self.navigation_stack.pop()
                 Utils.write(full_path, soup.prettify())
             # CSS urls need to be rewritten
             elif os.path.splitext(full_path)[1] == '.css':
@@ -515,14 +522,14 @@ class PageCopy(Downloader):
             if len(local_path) > max_length:
                 # Truncate title if too long
                 title = title[:max_length - len(local_path)]
-            elif local_path in self.page_titles:
-                if soup == self.page_titles[local_path]:
+            elif local_path in self.downloaded_pages:
+                if soup == self.downloaded_pages[local_path]:
                     exists = True
                     done = True
                 else:
                     counter += 1
             else:
-                self.page_titles[local_path] = soup
+                self.downloaded_pages[local_path] = soup
                 done = True
         if Config.DEBUG:
             debug_path = self.get_full_path('/debug' + local_path)
@@ -555,7 +562,10 @@ class PageCopy(Downloader):
 
     @staticmethod
     def get_full_path(local_path):
-        return website_path + local_path[1:]
+        if local_path.startswith('/../'):
+            return Config.DOWNLOAD_PATH + local_path[4:]
+        else:
+            return website_path + local_path[1:]
 
     @staticmethod
     def is_local_url(url: str):
@@ -604,18 +614,21 @@ class PageCopy(Downloader):
 
         return PageCopy.unparse_query(u, query)
 
-    @staticmethod
-    def url_to_path(url: str):
+    def url_to_path(self, url: str):
         if '/webapps/assignment/download' in url:
             attempt_id = re.search(r"attempt_id=_(.*?)_1", url).group(1)
             filename = re.search(r"fileName=([^&]*)", url).group(1)
-            path = f'/assignments/{attempt_id} - {filename}'
+            path = f'/../{self.navigation_stack[-1]}/{attempt_id} - {filename}'
         else:
             if '#' in url:
                 url = url[:url.find('#')]
             if '?' in url:
                 url = url[:url.find('?')]
-            path = url
+            if 'bbcswebdav' in url and 'dt-content-rid' in url:
+                filename = posixpath.basename(url)
+                path = f'/../{self.navigation_stack[-1]}/{filename}'
+            else:
+                path = url
         path = urllib.parse.unquote(path)
         return path
 
