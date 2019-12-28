@@ -411,7 +411,6 @@ class PageCopy(Downloader):
         if url in self.url_dict:
             return self.url_dict[url]
 
-        # TODO: Doesn't work for resubmission files with the same name
         # Check if file already exists
         local_path = self.url_to_path(url)
         full_path = self.get_full_path(local_path)
@@ -608,8 +607,9 @@ class PageCopy(Downloader):
     @staticmethod
     def url_to_path(url: str):
         if '/webapps/assignment/download' in url:
+            attempt_id = re.search(r"attempt_id=_(.*?)_1", url).group(1)
             filename = re.search(r"fileName=([^&]*)", url).group(1)
-            path = f'/assignments/{filename}'
+            path = f'/assignments/{attempt_id} - {filename}'
         else:
             if '#' in url:
                 url = url[:url.find('#')]
