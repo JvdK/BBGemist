@@ -14,8 +14,8 @@ import Config
 import Utils
 from Downloader import Downloader
 
-base_url = "https://blackboard.utwente.nl"
-website_path = Config.DOWNLOAD_PATH + "website/"
+base_url = 'https://blackboard.utwente.nl'
+website_path = Config.DOWNLOAD_PATH + 'website/'
 
 
 class PageCopy(Downloader):
@@ -30,9 +30,9 @@ class PageCopy(Downloader):
     navigation_stack = []
 
     def __init__(self):
-        logging.info("--- Initialising Downloader ---")
+        logging.info('--- Initialising Downloader ---')
 
-        user_file = Config.CACHE_PATH + "user.txt"
+        user_file = Config.CACHE_PATH + 'user.txt'
         user_data = None
         if os.path.isfile(user_file):
             logging.info('Reading user credentials file')
@@ -40,24 +40,24 @@ class PageCopy(Downloader):
             self.username = user_data['username']
             self.password = user_data['password']
             logging.info('Read user credentials file')
-            message = "Logging in to Blackboard using stored credentials, please wait..."
+            message = 'Logging in to Blackboard using stored credentials, please wait...'
         else:
-            message = "Please login to Blackboard"
+            message = 'Please login to Blackboard'
             print(message)
-            print("=" * len(message))
+            print('=' * len(message))
             print()
             if self.username is None:
                 logging.info('User will type username now...')
-                self.username = input("Please type your username and hit [Enter]:\n> ")
-                logging.info("User typed username.")
+                self.username = input('Please type your username and hit [Enter]:\n> ')
+                logging.info('User typed username.')
                 print()
             if self.password is None:
-                logging.info("User will type password now...")
-                print("Please type your password (not visible) and hit [Enter]:\n")
-                self.password = getpass("> ")
-                logging.info("User typed password.")
+                logging.info('User will type password now...')
+                print('Please type your password (not visible) and hit [Enter]:\n')
+                self.password = getpass('> ')
+                logging.info('User typed password.')
                 print()
-            message = "Logging in to Blackboard, please wait..."
+            message = 'Logging in to Blackboard, please wait...'
         print(message)
 
         self.session = requests.session()
@@ -66,7 +66,7 @@ class PageCopy(Downloader):
 
         if user_data is None:
             logging.info('User will answer store credentials question now...')
-            question = "Would you like to store your credentials? (unsafe, username and password will be visible)"
+            question = 'Would you like to store your credentials? (unsafe, username and password will be visible)'
             answer = Utils.yes_or_no(question)
             logging.info(f'User answered {answer}')
             if answer:
@@ -79,12 +79,13 @@ class PageCopy(Downloader):
 
         self.get_cdn_images()
         self.get_courses_page()
+        self.get_organisations_page()
         self.create_index_page()
-        print("Done!")
+        print('Done!')
 
     def login(self):
         logging.info('Logging in to Blackboard')
-        login_url = f"{base_url}/webapps/login/"
+        login_url = f'{base_url}/webapps/login/'
 
         payload = {
             'user_id': self.username,
@@ -98,10 +99,10 @@ class PageCopy(Downloader):
 
         if 'webapps/portal/execute/defaultTab' in r.text:
             logging.info('Login successful!')
-            print("Login successful!")
+            print('Login successful!')
         else:
             logging.critical('Login failed!')
-            print("Login failed, please check your credentials or refer to the README.md file!")
+            print('Login failed, please check your credentials or refer to the README.md file!')
             exit()
 
     def get_cdn_images(self):
@@ -109,28 +110,35 @@ class PageCopy(Downloader):
 
     @staticmethod
     def create_index_page():
-        logging.info("Creating index page")
-        print("Creating index page...")
+        logging.info('Creating index page')
+        print('Creating index page...')
         index_content = '<meta http-equiv="Refresh" content="0; url=website/Courses.html"/>'
-        Utils.write(Config.DOWNLOAD_PATH + "index.html", index_content)
-        logging.info("Created index page")
+        Utils.write(Config.DOWNLOAD_PATH + 'index.html', index_content)
+        logging.info('Created index page')
 
     #
     # Overview pages
     #
 
     def get_courses_page(self):
-        logging.info("Retrieving courses page")
-        print("Retrieving courses...")
-        page_url = f"{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_2_1"
+        self.get_overview_page('Courses', '_2_1')
+
+    def get_organisations_page(self):
+        self.get_overview_page('Organisations', '_3_1')
+
+    def get_overview_page(self, name, tab_group_id):
+        logging.info(f'Retrieving {name} page')
+        print(f'Retrieving {name}...')
+        page_url = f'{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id={tab_group_id}'
         r = self.session.get(page_url)
         url_dir = posixpath.dirname(self.strip_base_url(r.url))
         soup = Utils.soup(string=r.text)
-        logging.info("Retrieved courses page")
+        logging.info(f'Retrieved {name} page')
+        soup.find('div', id='column1').decompose()
         self.process_page(soup, url_dir)
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
-        Utils.write(website_path + "Courses.html", soup.prettify())
-        logging.info("Stored courses page")
+        Utils.write(website_path + name + '.html', soup.prettify())
+        logging.info(f'Stored {name} page')
 
     #
     # General page processing
@@ -267,8 +275,6 @@ class PageCopy(Downloader):
         decompose(id='actionbar')  # Action bar
         decompose(class_='subActionBar')  # Action bar
         decompose(class_='dbThreadFooter')  # Thread footer
-        decompose(id='module:_28_1')  # Course Catalogue
-        decompose(id='module:_493_1')  # Search course catalogue
         decompose(id='copyright')  # Copyright at page bottom
         decompose(class_='taskbuttondiv_wrapper')  # Task submission buttons
         decompose(id='step2')  # Assignment submission
@@ -479,11 +485,11 @@ class PageCopy(Downloader):
                 url_dir = posixpath.dirname(url)
                 local_dir = posixpath.dirname(local_path)
                 css = self.replace_css_urls(r.text, url_dir, local_dir)
-                with open(full_path, "w", encoding='utf-8') as f:
+                with open(full_path, 'w', encoding='utf-8') as f:
                     f.write(css)
             # Other files can be stored without processing
             else:
-                with open(full_path, "wb") as f:
+                with open(full_path, 'wb') as f:
                     # Use chunks in case of very large files
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
@@ -616,8 +622,8 @@ class PageCopy(Downloader):
 
     def url_to_path(self, url: str):
         if '/webapps/assignment/download' in url:
-            attempt_id = re.search(r"attempt_id=_(.*?)_1", url).group(1)
-            filename = re.search(r"fileName=([^&]*)", url).group(1)
+            attempt_id = re.search(r'attempt_id=_(.*?)_1', url).group(1)
+            filename = re.search(r'fileName=([^&]*)', url).group(1)
             path = f'/../{self.navigation_stack[-1]}/{attempt_id} - {filename}'
         else:
             if '#' in url:
