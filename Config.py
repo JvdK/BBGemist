@@ -12,4 +12,4 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 CONSOLE_HEIGHT = 24
 
-DEBUG = False
+DEBUG = True

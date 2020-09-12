@@ -190,8 +190,8 @@ class PageCopy(Downloader):
 
         script = soup.new_tag('script')
         script.string = '''function clickGrade(e) {
-            elements = $("left_stream_mygrades").getElementsByTagName("div");
-            for(i = 0; i< elements.length; i++) {
+            var elements = $("left_stream_mygrades").getElementsByTagName("div");
+            for(var i = 0; i < elements.length; i++) {
                 elements[i].setAttribute("aria_selected", "false");
                 elements[i].classList.remove("active_stream_item");
             }
@@ -610,25 +610,47 @@ class PageCopy(Downloader):
             grades.find('span').string.replace_with('Grades')
 
     def replace_onclick(self, soup: BeautifulSoup):
-        for a in soup.find_all('a', {'onclick': True}):
-            if 'loadContentFrame' in a['onclick']:
-                href = re.search(r"loadContentFrame\('(.*)'\)", a['onclick']).group(1)
+        contains_grades = False
+        for tag in soup.find_all(attrs={'onclick': True}):
+            if 'loadContentFrame' in tag['onclick']:
+                href = re.search(r"loadContentFrame\('(.*)'\)", tag['onclick']).group(1)
                 path = self.download_local_file(href)[1:]
-                a['href'] = path
-                a['target'] = '_top'
-                del a['onclick']
-            elif 'gradeAssignment.inlineView' in a['onclick']:
+                onclick = f"window.top.location='{path}';"
+                tag['onclick'] = onclick
+                if tag.get('id') == 'goToCourseContent':
+                    soup.find(id='streamDetailHeaderRightClickable')['onclick'] = onclick
+            elif 'gradeAssignment.inlineView' in tag['onclick']:
+                contains_grades = True
                 course_id_script = soup.find('script', text=re.compile(r'var *courseId')).text
                 course_id = re.search(r"var *courseId *= *'(.*?)'", course_id_script).group(1)
-                r = re.search(r"gradeAssignment\.inlineView(?:GroupFile)?\(.*?, *'(.*?)', *'(.*?)' *\)", a['onclick'])
+                r = re.search(r"gradeAssignment\.inlineView(?:GroupFile)?\(.*?, *'(.*?)', *'(.*?)' *\)", tag['onclick'])
                 file_id = r.group(1)
-                attempt_id = r.group(2)
-                url = f'/webapps/assignment/inlineView?course_id={course_id}&file_id={file_id}&attempt_id={attempt_id}'
-                if 'gradeAssignment.inlineViewGroupFile' in a['onclick']:
-                    url += '&group=true'
-                json = self.session.get(base_url + url).text
-                # TODO: Selected does not work
-                a['onclick'] = f'gradeAssignment.handleInlineViewResponse({json});'
+                onclick = 'selectTarget(event);gradeAssignment.hideAllViews();'
+                if file_id == 'submissionText':
+                    onclick += '$(gradeAssignment.getViewContainerId("submissionText")).show();'
+                else:
+                    attempt_id = r.group(2)
+                    url = f'/webapps/assignment/inlineView?course_id={course_id}&file_id={file_id}&attempt_id={attempt_id}'
+                    if 'gradeAssignment.inlineViewGroupFile' in tag['onclick']:
+                        url += '&group=true'
+                    response = self.session.get(base_url + url).text
+                    onclick += f'gradeAssignment.handleInlineViewResponse({response});'
+                tag['onclick'] = onclick
+        if contains_grades:
+            self.add_select_target_script(soup)
+
+    @staticmethod
+    def add_select_target_script(soup: BeautifulSoup):
+        script = soup.new_tag('script')
+        script.string = '''function selectTarget(event) {
+            var elements = $("currentAttempt_submissionList").getElementsByClassName("selected");
+            for(var i = 0; i < elements.length; i++) {
+                elements[i].classList.remove("selected");
+            }
+            event.currentTarget.classList.add("selected");
+        }
+        '''
+        soup.find('body').append(script)
 
     def replace_local_urls(self, soup: BeautifulSoup, tag: str, attr: str, url_dir: str):
         for element in soup.find_all(tag, {attr: True}):
@@ -677,7 +699,7 @@ class PageCopy(Downloader):
             if r.status_code == 404:
                 local_path = '/404.html'
             else:
-                local_path = self.url_to_path(url)
+                local_path = self.url_to_path(url, r.headers['content-type'])
             full_path = self.get_full_path(local_path)
             if os.path.isfile(full_path):
                 self.update_url_dict(local_path, url=url, request=r)
@@ -864,7 +886,7 @@ class PageCopy(Downloader):
 
         return PageCopy.unparse_query(u, query)
 
-    def url_to_path(self, url: str):
+    def url_to_path(self, url: str, content_type: str = None):
         if '/webapps/assignment/download' in url:
             attempt_id = re.search(r'attempt_id=_(.*?)_1', url).group(1)
             filename = re.search(r'fileName=([^&]*)', url).group(1)
@@ -880,6 +902,19 @@ class PageCopy(Downloader):
             else:
                 path = url
         path = urllib.parse.unquote(path)
+        if content_type:
+            if content_type == 'image/svg+xml':
+                if not path.lower().endswith('.svg'):
+                    path += '.svg'
+            elif content_type == 'image/png':
+                if not path.lower().endswith('.png'):
+                    path += '.png'
+            elif content_type == 'image/jpeg':
+                if not path.lower().endswith('.jpg') or path.lower().endswith('.jpeg'):
+                    path += '.jpg'
+            elif content_type == 'image/gif':
+                if not path.lower().endswith('.gif'):
+                    path += '.gif'
         return path
 
     @staticmethod
