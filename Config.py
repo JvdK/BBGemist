@@ -8,8 +8,8 @@ CHECKSUM_FILE = CACHE_PATH + "checksum.sha256"
 
 COOKIE_PATH = CACHE_PATH + "(cookies)/"
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36"
 
 CONSOLE_HEIGHT = 24
 
-DEBUG = True
+DEBUG = False
