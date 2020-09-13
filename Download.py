@@ -369,7 +369,7 @@ class Download(Downloader):
 
             return
 
-        if "You are or were enrolled in more than one group for this assignment. Choose the group below for which you would like to access this assignment." in str(soup):
+        if "You are or were enrolled in more than one group for this assignment." in str(soup):
             print("This is a group submission page! Deleting html and ignoring!")
             os.remove(submission_page)
 
