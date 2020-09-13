@@ -294,7 +294,7 @@ class BlackboardScraper(tk.Frame):
                 icon_url = '/images/ci/gradebook/exempt_large.png'
                 icon_suffix = ' exempt'
         if icon_url:
-            icon_path = self.download_local_file(icon_url)
+            icon_path = self.download_local_file(icon_url)[1:]
             grade_img = soup.new_tag('img')
             grade_img['src'] = icon_path
             grade_img['class'] = 'largeIcon'
