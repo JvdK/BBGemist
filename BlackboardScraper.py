@@ -159,6 +159,7 @@ class BlackboardScraper(tk.Frame):
     #
     # Overview pages
     #
+
     def get_courses_page(self):
         self.get_overview_page('Courses', '_2_1')
 
@@ -772,11 +773,11 @@ class BlackboardScraper(tk.Frame):
                 url_dir = posixpath.dirname(url)
                 local_dir = posixpath.dirname(local_path)
                 css = self.replace_css_urls(r.text, url_dir, local_dir)
-                with open(full_path, 'w', encoding='utf-8') as f:
+                with open(self.to_long_path(full_path), 'w', encoding='utf-8') as f:
                     f.write(css)
             # Other files can be stored without processing
             else:
-                with open(full_path, 'wb') as f:
+                with open(self.to_long_path(full_path), 'wb') as f:
                     # Use chunks in case of very large files
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
@@ -971,8 +972,14 @@ class BlackboardScraper(tk.Frame):
             dump = json.dumps(dump)
         else:
             print("Unsupported type")
-        with codecs.open(file, mode="w", encoding="utf-8") as f:
+        with codecs.open(BlackboardScraper.to_long_path(file), mode="w", encoding="utf-8") as f:
             f.write(dump)
+
+    @staticmethod
+    def to_long_path(path: str):
+        while '//' in path:
+            path = path.replace('//', '/')
+        return '\\\\?\\' + path.replace('/', '\\')
 
 
 if __name__ == '__main__':
