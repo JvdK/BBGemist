@@ -37,7 +37,7 @@ class BlackboardScraper(tk.Frame):
         self.username = None
         self.password = None
 
-        self.download_path = expanduser('~/Blackboard/').replace('\\', '/')
+        self.download_path = expanduser('~/Documents/Blackboard/').replace('\\', '/')
         self.website_path = self.download_path + 'website/'
 
         self.worker = None
@@ -100,7 +100,7 @@ class BlackboardScraper(tk.Frame):
     def folder_select_command(self):
         self.print('Select the folder to save to... (a new folder will be created inside)')
         folder = filedialog.askdirectory()
-        self.download_path = folder + 'Documents/Blackboard/'
+        self.download_path = folder + '/Blackboard/'
         self.website_path = self.download_path + 'website/'
         self.print(f'Current folder is: {self.download_path}')
 

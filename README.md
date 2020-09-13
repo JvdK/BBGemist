@@ -18,4 +18,13 @@ To run the program, go to the folder that contains the code and then go one leve
 python BBGemist
 ````
 
-A self-contained .exe for Windows file might be available at a later time. (Soonᵀᴹ)
+Compile EXE
+-----------
+Install pyinstaller:
+```
+pip install pyinstaller
+```
+To create the EXE run the following command:
+```
+pyinstaller.exe --noconsole --onefile --icon=bb-icon2.ico BlackboardScraper.py
+```
