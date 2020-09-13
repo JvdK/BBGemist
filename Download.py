@@ -13,6 +13,7 @@ from Downloader import Downloader
 class Download(Downloader):
     username = None
     password = None
+    base_url = "https://blackboard.utwente.nl"
 
     def __init__(self):
         logging.debug("--- Initialising Downloader ---")
@@ -42,9 +43,12 @@ class Download(Downloader):
 
         self.files = []
 
-        self.login()
+        if self.login():
+            print("Logged in!")
+        else:
+            print("ERROR logging in...")
 
-        Utils.wait(3)
+        # Utils.wait(3)
 
         Utils.clear()
 
@@ -66,25 +70,20 @@ class Download(Downloader):
         print("Done!")
 
     def login(self):
-        login_url = "https://blackboard.utwente.nl/webapps/login/"
-
+        r = self.session.get('https://blackboard.utwente.nl/webapps/portal/execute/defaultTab')
+        soup = Utils.soup(string=r.text)
+        value = soup.find('input', attrs={'name': 'blackboard.platform.security.NonceUtil.nonce'})['value']
+        login_url = f'{self.base_url}/webapps/login/'
         payload = {
             'user_id': self.username,
             'password': self.password,
             'login': 'Login',
             'action': 'login',
-            'new_loc': ''
+            'new_loc': '',
+            'blackboard.platform.security.NonceUtil.nonce': value
         }
-
         r = self.session.post(login_url, data=payload)
-
-        if 'webapps/portal/execute/defaultTab' in r.text:
-            logging.info('Login successful!')
-            print("Login successful!")
-        else:
-            logging.critical('Login failed!')
-            print("Login failed, please check your credentials or refer to the README.md file!")
-            exit()
+        return 'webapps/portal/execute/tabs' in r.text
 
     def get_course_info(self, course_url):
         print("Getting Course Information...")
