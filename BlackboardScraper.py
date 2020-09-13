@@ -80,10 +80,21 @@ class BlackboardScraper(tk.Frame):
             self.start_button.configure(text="Start", command=self.get_all_pages)
             self.other_button.configure(state=tk.NORMAL)
             self.print('Login successful!')
-            self.print(f'Current folder is: {self.download_path}')
-            self.print('Make sure you have enough space available, some files can be large!')
+            self.info_message()
         else:
             self.print('Login failed, please check your credentials and try again')
+
+    def info_message(self):
+        self.print()
+        self.print('This tool will download all blackboard course files and submissions')
+        self.print('The files will be put in a folder per course')
+        self.print('All web pages will be scraped and modified to work without web server')
+        self.print('The resulting website can be accessed locally by opening the index.html file')
+        self.print()
+        self.print('Make sure you have enough space available, some files can be large!')
+        self.print('Depending on the courses, the process can take an hour or longer and the space needed is around 10GB')
+        self.print()
+        self.print(f'Current folder is: {self.download_path}')
 
     def folder_select_command(self):
         self.print('Select the folder to save to... (a new folder will be created inside)')
