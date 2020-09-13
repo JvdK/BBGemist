@@ -371,6 +371,7 @@ class PageCopy(Downloader):
         self.remove_scripts(soup)
         self.cleanup_page(soup)
         self.replace_navbar(soup)
+        self.replace_redirects(soup)
         self.replace_local_urls(soup, 'img', 'src', url_dir)
         self.replace_local_urls(soup, 'script', 'src', url_dir)
         self.replace_local_urls(soup, 'link', 'href', url_dir)
@@ -598,6 +599,12 @@ class PageCopy(Downloader):
         replace_class('buildList', ['announcementList', 'announcementList-read'])  # Announcements edit mode
         replace_class('liItem', ['read'])  # Contentlist edit mode
         replace_class('ok')  # Avoids duplicates
+
+    @staticmethod
+    def replace_redirects(soup: BeautifulSoup):
+        for tag in soup.find_all('a', href=re.compile(r'contentWrapper\.jsp')):
+            url, query = PageCopy.parse_query(tag['href'])
+            tag['href'] = query['href'][0]
 
     @staticmethod
     def replace_navbar(soup: BeautifulSoup):
