@@ -1,8 +1,8 @@
 BBGemist (Blackboard Downloader)
 ================================
 The goal of this program is to download course data from the University of Twente Blackboard archive, which
-is available until 14 September 2020. It tries to download all course files available on pages and will try to download
-all assignments and submissions as well.
+is available until 14 September 2020. It tries to download all course files, assignments and submissions available.
+The web pages will be scraped and modified to work without a web-server to create a local Blackboard copy.
 
 Installation Instructions
 -------------------------
@@ -17,10 +17,5 @@ To run the program, go to the folder that contains the code and then go one leve
 ````
 python BBGemist
 ````
-
-You can update the download path in `Config.py`, the folder will be automatically created:
-```python
-DOWNLOAD_PATH = "D:/Blackboard/"
-```
 
 A self-contained .exe for Windows file might be available at a later time. (Soonᵀᴹ)

@@ -1,3 +1,4 @@
+import codecs
 import html
 import json
 import os
@@ -14,8 +15,6 @@ import requests
 # noinspection PyProtectedMember
 from bs4 import BeautifulSoup, Comment, Tag
 from requests import Response
-
-import Utils
 
 
 class BlackboardScraper(tk.Frame):
@@ -83,7 +82,7 @@ class BlackboardScraper(tk.Frame):
 
     def login(self):
         r = self.session.get('https://blackboard.utwente.nl/webapps/portal/execute/defaultTab')
-        soup = Utils.soup(string=r.text)
+        soup = self.soup(r.text)
         value = soup.find('input', attrs={'name': 'blackboard.platform.security.NonceUtil.nonce'})['value']
         login_url = f'{self.base_url}/webapps/login/'
         payload = {
@@ -103,7 +102,7 @@ class BlackboardScraper(tk.Frame):
     def create_index_page(self):
         self.print('Creating index page...')
         index_content = '<meta http-equiv="Refresh" content="0; url=website/Courses.html"/>'
-        Utils.write(self.download_path + 'index.html', index_content)
+        self.write(self.download_path + 'index.html', index_content)
 
     #
     # Overview pages
@@ -119,11 +118,11 @@ class BlackboardScraper(tk.Frame):
         page_url = f'{self.base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id={tab_group_id}'
         r = self.session.get(page_url)
         url_dir = self.get_url_dir(r.url)
-        soup = Utils.soup(string=r.text)
+        soup = self.soup(r.text)
         soup.find('div', id='column1').decompose()
         self.process_page(soup, url_dir)
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
-        Utils.write(self.website_path + name + '.html', soup.prettify())
+        self.write(self.website_path + name + '.html', soup.prettify())
 
     #
     # Grades
@@ -137,7 +136,7 @@ class BlackboardScraper(tk.Frame):
         url = f'{self.base_url}/webapps/bb-social-learning-bb_bb60/execute/mybb?cmd=display&toolId=MyGradesOnMyBb_____MyGradesTool'
         r = self.session.get(url)
         url_dir = self.get_url_dir(r.url)
-        soup = Utils.soup(string=r.text)
+        soup = self.soup(r.text)
 
         self.process_page(soup, url_dir)
         soup.find(id='Support')['class'] = 'active'
@@ -145,14 +144,14 @@ class BlackboardScraper(tk.Frame):
         self.add_window_height_script(soup, 'mybbCanvas')
         inner_name = f'{name} inner'
         soup.find(id='mybbCanvas')['src'] = f'{inner_name}.html'
-        Utils.write(self.website_path + f'{name}.html', soup.prettify())
+        self.write(self.website_path + f'{name}.html', soup.prettify())
         self.get_grades_inner(inner_name, stream_name)
 
     def get_grades_inner(self, name: str, stream_name: str):
         url = f'{self.base_url}/webapps/streamViewer/streamViewer?cmd=view&streamName=mygrades&globalNavigation=false'
         r = self.session.get(url)
         url_dir = self.get_url_dir(r.url)
-        soup = Utils.soup(string=r.text)
+        soup = self.soup(r.text)
 
         self.process_page(soup, url_dir)
         self.add_window_height_script(soup, 'right_stream_mygrades')
@@ -191,7 +190,7 @@ class BlackboardScraper(tk.Frame):
         for entry in entries:
             self.add_entry_to_gradelist(soup, gradelist, entry, stream_entries)
 
-        Utils.write(self.website_path + f'{name}.html', soup.prettify())
+        self.write(self.website_path + f'{name}.html', soup.prettify())
 
     @staticmethod
     def add_grade_filter(soup: BeautifulSoup, grade_filter: Tag, name: str, path: str, this_page: bool):
@@ -363,8 +362,8 @@ class BlackboardScraper(tk.Frame):
                 parameters = re.search(r"parameters: '([^,']*)',", script).group(1)
                 data = urllib.parse.parse_qs(parameters)
                 r = self.session.post(full_url, data=data)
-                tab_soup = Utils.soup(string=r.text)
-                content_soup = Utils.soup(string=tab_soup.find('contents').text)
+                tab_soup = self.soup(r.text)
+                content_soup = self.soup(tab_soup.find('contents').text)
                 soup.find('div', id=div_id).replace_with(content_soup)
 
     def load_course_information(self, soup: BeautifulSoup):
@@ -374,7 +373,7 @@ class BlackboardScraper(tk.Frame):
                 r = self.session.get(self.base_url + script['src'])
                 course_information = re.search(r"var html = '(.*)';", r.text).group(1)
                 course_information = course_information.encode('utf-8').decode('unicode_escape').replace(r'\/', r'/')
-                course_information_soup = Utils.soup(string=course_information)
+                course_information_soup = self.soup(course_information)
                 soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
 
     def load_discussion_board(self, soup: BeautifulSoup):
@@ -383,7 +382,7 @@ class BlackboardScraper(tk.Frame):
             if 'treeUrl' in script:
                 tree_url = self.base_url + re.search(r'var treeUrl = "([^"]*)";', script).group(1)
                 r = self.session.get(tree_url)
-                tree_soup = Utils.soup(string=r.text)
+                tree_soup = self.soup(r.text)
                 soup.find('div', id='tree').replace_with(tree_soup)
                 message_url = self.base_url + re.search(r'var messageUrl = "([^"]*)";', script).group(1)
                 u, query = self.parse_query(message_url)
@@ -393,7 +392,7 @@ class BlackboardScraper(tk.Frame):
                     query['message_id'] = message_id
                     url = self.unparse_query(u, query)
                     r = self.session.get(url)
-                    message_soup = Utils.soup(string=r.text)
+                    message_soup = self.soup(r.text)
                     div.clear()
                     div.append(message_soup)
                     del div['style']
@@ -691,9 +690,9 @@ class BlackboardScraper(tk.Frame):
 
             # HTML paths are based on page title
             if is_html:
-                soup = Utils.soup(string=r.text)
+                soup = self.soup(r.text)
                 if r.status_code != 404:
-                    local_path, exists = self.generate_page_title(Utils.soup(string=r.text))
+                    local_path, exists = self.generate_page_title(self.soup(r.text))
                     if exists:
                         self.update_url_dict(local_path, url=url, request=r)
                         return local_path
@@ -715,7 +714,7 @@ class BlackboardScraper(tk.Frame):
                 self.process_page(soup, url_dir)
                 if navigation_tag:
                     self.navigation_stack.pop()
-                Utils.write(full_path, soup.prettify())
+                self.write(full_path, soup.prettify())
             # CSS urls need to be rewritten
             elif os.path.splitext(full_path)[1] == '.css':
                 url_dir = posixpath.dirname(url)
@@ -894,6 +893,30 @@ class BlackboardScraper(tk.Frame):
         u = u._replace(query=urllib.parse.urlencode(sorted(query.items()), True, quote_via=urllib.parse.quote))
         url = urllib.parse.urlunparse(u)
         return url
+
+    #
+    # Helper methods
+    #
+
+    @staticmethod
+    def soup(string: str):
+        return BeautifulSoup(string, "html.parser")
+
+    @staticmethod
+    def write(file: str, dump):
+        if isinstance(dump, str):
+            # print("This is a string")
+            pass
+        elif isinstance(dump, dict):
+            # print("This is a dict, using JSON encoder")
+            dump = json.dumps(dump, indent=4)
+        elif isinstance(dump, list):
+            # print("This is a list, using JSON encode")
+            dump = json.dumps(dump)
+        else:
+            print("Unsupported type")
+        with codecs.open(file, mode="w", encoding="utf-8") as f:
+            f.write(dump)
 
 
 if __name__ == '__main__':
