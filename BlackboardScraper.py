@@ -7,9 +7,11 @@ import re
 import time
 import tkinter as tk
 import urllib.parse
+from os.path import expanduser
 from queue import Queue
 from threading import Thread
-from tkinter import scrolledtext, simpledialog, filedialog
+from tkinter import simpledialog, filedialog
+from tkinter.scrolledtext import ScrolledText
 
 import requests
 # noinspection PyProtectedMember
@@ -31,54 +33,70 @@ class BlackboardScraper(tk.Frame):
         self.navigation_stack = []
         self.session = requests.session()
 
-        self.master = master
-        self.pack()
-        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=120, height=30, font=("Consolas", 11))
-        self.text_area.grid(column=0, pady=10, padx=10)
-        self.message_queue = Queue()
-        self.read_queue()
-        self.print('Blackboard downloader started!')
+        self.username = None
+        self.password = None
 
-        logged_in = False
-        while not logged_in:
-            self.print('Enter your username...')
-            self.username = simpledialog.askstring("Username", "What is your username?", parent=self)
-            self.print('Enter your password...')
-            self.password = simpledialog.askstring("Password", "What is your password?", parent=self, show='*')
-            logged_in = self.login()
-            if not logged_in:
-                self.print('Login failed, please check your credentials and try again')
-        self.print('Login successful!')
-
-        self.print('Select the folder to save to... (a new folder will be created inside)')
-        folder = filedialog.askdirectory()
-        self.download_path = folder + '/Blackboard/'
+        self.download_path = expanduser('~/Blackboard/').replace('\\', '/')
         self.website_path = self.download_path + 'website/'
 
-        self.worker = Thread(target=self.start, daemon=True)
-        self.worker.start()
+        self.worker = None
+
+        self.master = master
+        self.pack()
+        self.text_area = ScrolledText(self, wrap=tk.WORD, width=120, height=30, font=("Consolas", 11))
+        self.text_area.grid(column=0, columnspan=2, row=0, rowspan=1, pady=10, padx=10)
+
+        self.start_button = tk.Button(self, text="Login", command=self.login_command, width=40, height=2)
+        self.start_button.grid(column=0, columnspan=1, row=1, rowspan=1, pady=10)
+        self.other_button = tk.Button(self, text="Change folder", command=self.folder_select_command, width=40,
+                                      height=2, state=tk.DISABLED)
+        self.other_button.grid(column=1, columnspan=1, row=1, rowspan=1, pady=10)
+
+        self.message_queue = Queue()
+        self.read_queue()
+        self.print('Blackboard scraper started!')
 
     def read_queue(self):
         while not self.message_queue.empty():
             text = self.message_queue.get()
             fully_scrolled_down = self.text_area.yview()[1] == 1.0
-            self.text_area.configure(state='normal')
+            self.text_area.configure(state=tk.NORMAL)
             self.text_area.insert(tk.END, text + '\n')
             if fully_scrolled_down:
                 self.text_area.see(tk.END)
-            self.text_area.configure(state='disabled')
+            self.text_area.configure(state=tk.DISABLED)
         self.after(100, self.read_queue)
 
     def print(self, text: str = ''):
         self.message_queue.put(text)
 
-    def start(self):
-        self.get_cdn_images()
-        self.get_courses_page()
-        self.get_organisations_page()
-        self.get_grades_pages()
-        self.create_index_page()
-        self.print('Done!')
+    def login_command(self):
+        self.print('Enter your username...')
+        self.username = simpledialog.askstring("Username", "What is your username?", parent=self)
+        self.print('Enter your password...')
+        self.password = simpledialog.askstring("Password", "What is your password?", parent=self, show='*')
+        logged_in = self.login()
+        if logged_in:
+            self.start_button.configure(text="Start", command=self.get_all_pages)
+            self.other_button.configure(state=tk.NORMAL)
+            self.print('Login successful!')
+            self.print(f'Current folder is: {self.download_path}')
+            self.print('Make sure you have enough space available, some files can be large!')
+        else:
+            self.print('Login failed, please check your credentials and try again')
+
+    def folder_select_command(self):
+        self.print('Select the folder to save to... (a new folder will be created inside)')
+        folder = filedialog.askdirectory()
+        self.download_path = folder + 'Documents/Blackboard/'
+        self.website_path = self.download_path + 'website/'
+        self.print(f'Current folder is: {self.download_path}')
+
+    def download_command(self):
+        self.start_button.configure(state=tk.DISABLED)
+        self.other_button.configure(state=tk.DISABLED)
+        self.worker = Thread(target=self.get_all_pages, daemon=True)
+        self.worker.start()
 
     def login(self):
         r = self.session.get('https://blackboard.utwente.nl/webapps/portal/execute/defaultTab')
@@ -95,6 +113,14 @@ class BlackboardScraper(tk.Frame):
         }
         r = self.session.post(login_url, data=payload)
         return 'webapps/portal/execute/tabs' in r.text
+
+    def get_all_pages(self):
+        self.get_cdn_images()
+        self.get_courses_page()
+        self.get_organisations_page()
+        self.get_grades_pages()
+        self.create_index_page()
+        self.print('Done!')
 
     def get_cdn_images(self):
         self.download_local_file('/images/ci/mybb/x_btn.png')
