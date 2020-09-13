@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 from getpass import getpass
+from urllib.parse import unquote
 
 import requests
 
@@ -47,8 +49,6 @@ class Download(Downloader):
             print("Logged in!")
         else:
             print("ERROR logging in...")
-
-        # Utils.wait(3)
 
         Utils.clear()
 
@@ -119,6 +119,12 @@ class Download(Downloader):
         print(course_name)
         print()
 
+        course_id = course_url.split("&id=")[-1].split("&")[0]
+
+        print("Course id:")
+        print(course_id)
+        print()
+
         Utils.create_folder_if_not_exists(Config.CACHE_PATH + course_name)
         Utils.write(Config.CACHE_PATH + course_name + "\\index.html", str(soup))
 
@@ -134,9 +140,10 @@ class Download(Downloader):
 
             skip = [
                 "Course Home Page",
-                "tool_id=_115",
-                "tool_id=_119",
-                "tool_id=_167"
+                "tool_id=_115", # email
+                "tool_id=_119", # discussion board
+                "tool_id=_167", # contacts
+                "tool_id=_178" # grades added manually
             ]
 
             if not any(x in course_folder_url for x in skip) and not any(x in course_folder_name for x in skip):
@@ -146,6 +153,11 @@ class Download(Downloader):
                 })
 
         print()
+
+        folders.append({
+            "folder": "My Grades",
+            "url": "/webapps/bb-mygrades-bb_bb60/myGrades?course_id={}&stream_name=mygrades&is_stream=false".format(course_id)
+        })
 
         return {
             "course_url": course_url,
@@ -184,20 +196,14 @@ class Download(Downloader):
 
             course_pages.append(Config.CACHE_PATH + course_page_html)
 
-            ###
-            # break
-            ###
-
         return course_pages
 
     def parse_course_page(self, course_info, course_page):
         if "Announcements" in course_page:
-            print("Sorry, saving announcements feature will be implemented later!")
-            print()
+            pass
 
         elif "Grades" in course_page:
-            print("Sorry, saving submissions feature will be implemented later!")
-            print()
+            self.parse_grades(course_page, course_info["course_name"])
 
         else:
             soup = Utils.soup(file=course_page)
@@ -214,6 +220,11 @@ class Download(Downloader):
 
             print()
 
+            if len(soup.select("#content_listContainer")) == 0:
+                input("There is no content on this page?")
+
+                return
+
             sections = soup.select("#content_listContainer")[0].select(".read")
             print("Number of sections: {}".format(len(sections)))
             for section in sections:
@@ -226,7 +237,7 @@ class Download(Downloader):
                         section_type = image.get("alt")  # No other way to get type... Bad bad Blackboard...
 
                         if section_type == "Content Folder":
-                            input("A subfolder was found! Press [Enter] to download this folder...")
+                            input("A sub-folder was found! Press [Enter] to download this folder...")
 
                             folder_url = "https://blackboard.utwente.nl" + section.find("h3").find("a").get("href")
                             folder_name = section.find("h3").text.strip().replace("/", "&").replace("\\", "&")
@@ -240,6 +251,24 @@ class Download(Downloader):
                             Utils.write(Config.CACHE_PATH + folder + folder_name + ".html", r.text)
 
                             self.parse_course_page(course_info, Config.CACHE_PATH + folder + folder_name + ".html")
+
+                        elif section_type == "Assignment":
+                            input("An assignment was found! Press [Enter] to download this assignment...")
+
+                            assignment_url = "https://blackboard.utwente.nl" + section.find("h3").find("a").get("href")
+                            assignment_name = section.find("h3").text.strip().replace("/", "&").replace("\\", "&")
+
+                            file_name = course_info["course_name"] + "\\[Assignments]\\" + assignment_name + ".html"
+                            file_name = Config.CACHE_PATH + "".join(i for i in file_name if i not in ':*?"<>|')
+
+                            print("Writing submission info page: {}".format(file_name))
+                            r = self.session.get(assignment_url)
+
+                            Utils.create_file_if_not_exists(file_name)
+                            Utils.write(file_name, r.text)
+
+                            self.parse_submission(file_name, course_info["course_name"], assignment_name)
+
                         else:
 
 
@@ -256,14 +285,18 @@ class Download(Downloader):
                 if len(attachments) > 0:
                     attachments_files = attachments[0].find_all("li")
                     if len(attachments_files) > 0:
-                        if len(attachments_files) > 1:
-                            print("Discovered {} files".format(len(attachments_files)))
+                        if len(attachments_files) > 2:
+                            print("Discovered {} files".format(len(attachments_files) / 2))
                         else:
-                            print("Discovered {} file".format(len(attachments_files)))
+                            print("Discovered {} file".format(len(attachments_files) / 2))
 
                         for attachments_file in attachments_files:
                             file_url = "https://blackboard.utwente.nl" + attachments_file.find("a").get("href")
                             file_name = attachments_file.find("a").text.strip()
+                            if file_name == "":
+                                continue
+                            if len(file_name.split(".")) == 1:
+                                file_name = file_name + " - " + unquote(attachments_file.find("span").get("bb:menugeneratorurl").split("/")[6].split("?")[0])
                             file_size = attachments_file.find("span").text.strip()
 
                             self.files.append({
@@ -273,12 +306,12 @@ class Download(Downloader):
                                 "file_size": file_size,
                             })
 
-                            print("- " + attachments_file.text.strip())
+                            print("- " + attachments_file.find("a").text.strip())
                             logging.info("File URL: {}".format(file_url))
                             logging.info("File Name: {}".format(file_name))
                             logging.info("File Size: {}".format(file_size))
 
-                            print("Press enter to download")
+                            print("\nPress enter to download")
                             input()
 
                             print("Downloading File...")
@@ -297,6 +330,76 @@ class Download(Downloader):
                                     file_name=file_name,
                                     checksum=Config.CHECKSUM_FILE)
 
-        # log to archive to resume downloads
-
         return download
+
+    def parse_grades(self, grades_file, folder):
+        print("Parsing Grades")
+        soup = Utils.soup(grades_file)
+
+        submissions = soup.find_all("div", {"class": "row"})
+
+        for submission in submissions:
+            if len(submission.find_all("a")) > 0 and "uploadAssignment?action=showHistory" in submission.find_all("a")[0].get("onclick"):
+                url = self.base_url + submission.find("a").get("onclick").split("('")[1].split("')")[0]
+                name = submission.find("a").text
+
+                file_name = folder + "\\[Assignments]\\" + name + ".html"
+                file_name = Config.CACHE_PATH + "".join(i for i in file_name if i not in ':*?"<>|')
+
+                print("Writing submission info page: {}".format(file_name))
+                r = self.session.get(url)
+
+                if os.path.isfile(file_name):
+                    print("Submission already downloaded!")
+                else:
+                    Utils.create_file_if_not_exists(file_name)
+                    Utils.write(file_name, r.text)
+
+                    self.parse_submission(file_name, folder, name)
+
+                Utils.wait(3)
+
+    def parse_submission(self, submission_page, folder, name):
+        print("Parsing Submission")
+        soup = Utils.soup(submission_page)
+
+        if "Browse Local Files. Opens the File Upload window to upload files from your computer." in str(soup):
+            print("This is a submission page! Deleting html!")
+            os.remove(submission_page)
+
+            return
+
+        assignment_files = soup.find("div", {"id": "assignmentInfo"})
+        assignment_files = assignment_files.find("ul")
+        if assignment_files is not None:
+            print("Found {} assignment files".format(len(assignment_files.find_all("a"))))
+
+            assignment_files = assignment_files.find_all("a")
+
+            input("Press [Enter] to download assignment files...")
+
+            for assignment_file in assignment_files:
+                filename = unquote(assignment_file.text)
+                url = assignment_file.get("href")
+
+                download = self.download_file(url=self.base_url + url,
+                                              folder=folder + "/[Assignments]/" + name + "/",
+                                              file_name="[Assignment] " + filename)
+
+                Utils.wait(3)
+
+        submission_files = soup.find_all("a", {"class": "dwnldBtn"})
+
+        print("Found {} submitted files".format(len(submission_files)))
+        print()
+        input("Press [Enter] to download submission files...")
+
+        for submission_file in submission_files:
+            filename = unquote(submission_file.get("href").split("=")[-1])
+            url = submission_file.get("href")
+
+            download = self.download_file(url=self.base_url + url,
+                                          folder=folder + "/[Assignments]/" + name + "/",
+                                          file_name=filename)
+
+            Utils.wait(3)
