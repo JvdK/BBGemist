@@ -1,100 +1,91 @@
 import html
 import json
-import logging
 import os
 import posixpath
 import re
 import time
+import tkinter as tk
 import urllib.parse
-from getpass import getpass
+from queue import Queue
+from threading import Thread
+from tkinter import scrolledtext, simpledialog, filedialog
 
 import requests
 # noinspection PyProtectedMember
 from bs4 import BeautifulSoup, Comment, Tag
 from requests import Response
 
-import Config
 import Utils
-from Downloader import Downloader
-
-base_url = 'https://blackboard.utwente.nl'
-website_path = Config.DOWNLOAD_PATH + 'website/'
 
 
-class BlackboardScraper(Downloader):
-    username = None
-    password = None
-    url_dict = {
-        'Courses.html': '/Courses.html',
-        'Organisations.html': '/Organisations.html',
-        'Grades.html': '/Grades.html'
-    }
-    downloaded_pages = {}
-    navigation_stack = []
+class BlackboardScraper(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
 
-    def __init__(self):
-        logging.info('--- Initialising Downloader ---')
-
-        user_file = Config.CACHE_PATH + 'user.txt'
-        user_data = None
-        if os.path.isfile(user_file):
-            logging.info('Reading user credentials file')
-            user_data = Utils.data(file=user_file)
-            self.username = user_data['username']
-            self.password = user_data['password']
-            logging.info('Read user credentials file')
-            message = 'Logging in to Blackboard using stored credentials, please wait...'
-        else:
-            message = 'Please login to Blackboard'
-            print(message)
-            print('=' * len(message))
-            print()
-            if self.username is None:
-                logging.info('User will type username now...')
-                self.username = input('Please type your username and hit [Enter]:\n> ')
-                logging.info('User typed username.')
-                print()
-            if self.password is None:
-                logging.info('User will type password now...')
-                print('Please type your password (not visible) and hit [Enter]:\n')
-                self.password = getpass('> ')
-                logging.info('User typed password.')
-                print()
-            message = 'Logging in to Blackboard, please wait...'
-        print(message)
-
+        self.base_url = 'https://blackboard.utwente.nl'
+        self.url_dict = {
+            'Courses.html': '/Courses.html',
+            'Organisations.html': '/Organisations.html',
+            'Grades.html': '/Grades.html'
+        }
+        self.downloaded_pages = {}
+        self.navigation_stack = []
         self.session = requests.session()
-        self.files = []
-        self.login()
 
-        if user_data is None:
-            logging.info('User will answer store credentials question now...')
-            question = 'Would you like to store your credentials? (unsafe, username and password will be visible)'
-            answer = Utils.yes_or_no(question)
-            logging.info(f'User answered {answer}')
-            if answer:
-                data = {
-                    'username': self.username,
-                    'password': self.password
-                }
-                Utils.write(user_file, data)
-                logging.info('Wrote user credentials to cache')
+        self.master = master
+        self.pack()
+        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, width=120, height=30, font=("Consolas", 11))
+        self.text_area.grid(column=0, pady=10, padx=10)
+        self.message_queue = Queue()
+        self.read_queue()
+        self.print('Blackboard downloader started!')
 
+        logged_in = False
+        while not logged_in:
+            self.print('Enter your username...')
+            self.username = simpledialog.askstring("Username", "What is your username?", parent=self)
+            self.print('Enter your password...')
+            self.password = simpledialog.askstring("Password", "What is your password?", parent=self, show='*')
+            logged_in = self.login()
+            if not logged_in:
+                self.print('Login failed, please check your credentials and try again')
+        self.print('Login successful!')
+
+        self.print('Select the folder to save to... (a new folder will be created inside)')
+        folder = filedialog.askdirectory()
+        self.download_path = folder + '/Blackboard/'
+        self.website_path = self.download_path + 'website/'
+
+        self.worker = Thread(target=self.start, daemon=True)
+        self.worker.start()
+
+    def read_queue(self):
+        while not self.message_queue.empty():
+            text = self.message_queue.get()
+            fully_scrolled_down = self.text_area.yview()[1] == 1.0
+            self.text_area.configure(state='normal')
+            self.text_area.insert(tk.END, text + '\n')
+            if fully_scrolled_down:
+                self.text_area.see(tk.END)
+            self.text_area.configure(state='disabled')
+        self.after(100, self.read_queue)
+
+    def print(self, text: str = ''):
+        self.message_queue.put(text)
+
+    def start(self):
         self.get_cdn_images()
         self.get_courses_page()
         self.get_organisations_page()
         self.get_grades_pages()
         self.create_index_page()
-        print('Done!')
+        self.print('Done!')
 
     def login(self):
         r = self.session.get('https://blackboard.utwente.nl/webapps/portal/execute/defaultTab')
         soup = Utils.soup(string=r.text)
         value = soup.find('input', attrs={'name': 'blackboard.platform.security.NonceUtil.nonce'})['value']
-
-        logging.info('Logging in to Blackboard')
-        login_url = f'{base_url}/webapps/login/'
-
+        login_url = f'{self.base_url}/webapps/login/'
         payload = {
             'user_id': self.username,
             'password': self.password,
@@ -103,27 +94,16 @@ class BlackboardScraper(Downloader):
             'new_loc': '',
             'blackboard.platform.security.NonceUtil.nonce': value
         }
-
         r = self.session.post(login_url, data=payload)
-
-        if 'webapps/portal/execute/tabs' in r.text:
-            logging.info('Login successful!')
-            print('Login successful!')
-        else:
-            logging.critical('Login failed!')
-            print('Login failed, please check your credentials or refer to the README.md file!')
-            exit()
+        return 'webapps/portal/execute/tabs' in r.text
 
     def get_cdn_images(self):
         self.download_local_file('/images/ci/mybb/x_btn.png')
 
-    @staticmethod
-    def create_index_page():
-        logging.info('Creating index page')
-        print('Creating index page...')
+    def create_index_page(self):
+        self.print('Creating index page...')
         index_content = '<meta http-equiv="Refresh" content="0; url=website/Courses.html"/>'
-        Utils.write(Config.DOWNLOAD_PATH + 'index.html', index_content)
-        logging.info('Created index page')
+        Utils.write(self.download_path + 'index.html', index_content)
 
     #
     # Overview pages
@@ -135,18 +115,15 @@ class BlackboardScraper(Downloader):
         self.get_overview_page('Organisations', '_3_1')
 
     def get_overview_page(self, name: str, tab_group_id: str):
-        logging.info(f'Retrieving {name} page')
-        print(f'Retrieving {name}...')
-        page_url = f'{base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id={tab_group_id}'
+        self.print(f'Retrieving {name}...')
+        page_url = f'{self.base_url}/webapps/portal/execute/tabs/tabAction?tab_tab_group_id={tab_group_id}'
         r = self.session.get(page_url)
         url_dir = self.get_url_dir(r.url)
         soup = Utils.soup(string=r.text)
-        logging.info(f'Retrieved {name} page')
         soup.find('div', id='column1').decompose()
         self.process_page(soup, url_dir)
         soup.find('div', id='content').find('style').string.replace_with('#column0{width: 100%;}')
-        Utils.write(website_path + name + '.html', soup.prettify())
-        logging.info(f'Stored {name} page')
+        Utils.write(self.website_path + name + '.html', soup.prettify())
 
     #
     # Grades
@@ -156,13 +133,11 @@ class BlackboardScraper(Downloader):
         self.get_grades_overview('Grades individual', 'mygrades_d')
 
     def get_grades_overview(self, name: str, stream_name: str):
-        logging.info(f'Retrieving {name} page')
-        print(f'Retrieving {name}...')
-        url = f'{base_url}/webapps/bb-social-learning-bb_bb60/execute/mybb?cmd=display&toolId=MyGradesOnMyBb_____MyGradesTool'
+        self.print(f'Retrieving {name}...')
+        url = f'{self.base_url}/webapps/bb-social-learning-bb_bb60/execute/mybb?cmd=display&toolId=MyGradesOnMyBb_____MyGradesTool'
         r = self.session.get(url)
         url_dir = self.get_url_dir(r.url)
         soup = Utils.soup(string=r.text)
-        logging.info(f'Retrieved {name} page')
 
         self.process_page(soup, url_dir)
         soup.find(id='Support')['class'] = 'active'
@@ -170,12 +145,11 @@ class BlackboardScraper(Downloader):
         self.add_window_height_script(soup, 'mybbCanvas')
         inner_name = f'{name} inner'
         soup.find(id='mybbCanvas')['src'] = f'{inner_name}.html'
-        Utils.write(website_path + f'{name}.html', soup.prettify())
+        Utils.write(self.website_path + f'{name}.html', soup.prettify())
         self.get_grades_inner(inner_name, stream_name)
-        logging.info(f'Retrieved Grades page')
 
     def get_grades_inner(self, name: str, stream_name: str):
-        url = f'{base_url}/webapps/streamViewer/streamViewer?cmd=view&streamName=mygrades&globalNavigation=false'
+        url = f'{self.base_url}/webapps/streamViewer/streamViewer?cmd=view&streamName=mygrades&globalNavigation=false'
         r = self.session.get(url)
         url_dir = self.get_url_dir(r.url)
         soup = Utils.soup(string=r.text)
@@ -202,7 +176,7 @@ class BlackboardScraper(Downloader):
         '''
         soup.find('body').append(script)
 
-        rhs = self.download_local_file(f'{base_url}/webapps/streamViewer/streamViewer?cmd=emptyRhs')[1:]
+        rhs = self.download_local_file(f'{self.base_url}/webapps/streamViewer/streamViewer?cmd=emptyRhs')[1:]
         soup.find(id='right_stream_mygrades')['src'] = rhs
 
         stream_entries = self.get_stream_entries(stream_name)
@@ -217,7 +191,7 @@ class BlackboardScraper(Downloader):
         for entry in entries:
             self.add_entry_to_gradelist(soup, gradelist, entry, stream_entries)
 
-        Utils.write(website_path + f'{name}.html', soup.prettify())
+        Utils.write(self.website_path + f'{name}.html', soup.prettify())
 
     @staticmethod
     def add_grade_filter(soup: BeautifulSoup, grade_filter: Tag, name: str, path: str, this_page: bool):
@@ -299,7 +273,7 @@ class BlackboardScraper(Downloader):
         context_bottom['class'] = 'stream_context_bottom'
 
         def find_name_by_id(e: dict):
-            course_id = BlackboardScraper.get_entry_course_id(e)
+            course_id = self.get_entry_course_id(e)
             for course in stream_entries['sv_extras']['sx_courses']:
                 if course['id'] == course_id:
                     return course['name']
@@ -320,13 +294,13 @@ class BlackboardScraper(Downloader):
             'providers': {},
             'forOverview': False
         }
-        r = self.session.post(f'{base_url}/webapps/streamViewer/streamViewer', data=payload)
+        r = self.session.post(f'{self.base_url}/webapps/streamViewer/streamViewer', data=payload)
         payload['retrieveOnly'] = True
         stream_entries = r.json()
         # Keep retrieving streams at a 1-second interval till the result has been retrieved (similar to blackboard)
         while len(stream_entries['sv_streamEntries']) == 0:
             time.sleep(1)
-            r = self.session.post(f'{base_url}/webapps/streamViewer/streamViewer', data=payload)
+            r = self.session.post(f'{self.base_url}/webapps/streamViewer/streamViewer', data=payload)
             stream_entries = r.json()
         return stream_entries
 
@@ -381,7 +355,7 @@ class BlackboardScraper(Downloader):
 
     def load_tabs(self, soup: BeautifulSoup):
         tab_url = '/webapps/portal/execute/tabs/tabAction'
-        full_url = base_url + tab_url
+        full_url = self.base_url + tab_url
         for script in soup.find_all('script', text=True):
             script = script.text
             if tab_url in script:
@@ -397,9 +371,9 @@ class BlackboardScraper(Downloader):
         url_part = '/webapps/utnl-OsirisCursusinformatie-bb_bb60/showCourseInformationJsAsync.do'
         for script in soup.find_all('script', {'src': True}):
             if url_part in script['src']:
-                r = self.session.get(base_url + script['src'])
+                r = self.session.get(self.base_url + script['src'])
                 course_information = re.search(r"var html = '(.*)';", r.text).group(1)
-                course_information = course_information.encode('utf-8').decode('unicode_escape').replace('\\/', '/')
+                course_information = course_information.encode('utf-8').decode('unicode_escape').replace(r'\/', r'/')
                 course_information_soup = Utils.soup(string=course_information)
                 soup.find('div', id='osirisCursusInformatie_contentDiv').replace_with(course_information_soup)
 
@@ -407,11 +381,11 @@ class BlackboardScraper(Downloader):
         for script in soup.find_all('script', text=True):
             script = script.text
             if 'treeUrl' in script:
-                tree_url = base_url + re.search(r'var treeUrl = "([^"]*)";', script).group(1)
+                tree_url = self.base_url + re.search(r'var treeUrl = "([^"]*)";', script).group(1)
                 r = self.session.get(tree_url)
                 tree_soup = Utils.soup(string=r.text)
                 soup.find('div', id='tree').replace_with(tree_soup)
-                message_url = base_url + re.search(r'var messageUrl = "([^"]*)";', script).group(1)
+                message_url = self.base_url + re.search(r'var messageUrl = "([^"]*)";', script).group(1)
                 u, query = self.parse_query(message_url)
                 for div in soup.find_all('div', class_='dbThreadMessage'):
                     message_id = re.search(r'message_(.*)', div['id']).group(1)
@@ -640,7 +614,7 @@ class BlackboardScraper(Downloader):
                     url = f'/webapps/assignment/inlineView?course_id={course_id}&file_id={file_id}&attempt_id={attempt_id}'
                     if 'gradeAssignment.inlineViewGroupFile' in tag['onclick']:
                         url += '&group=true'
-                    response = self.session.get(base_url + url).text
+                    response = self.session.get(self.base_url + url).text
                     onclick += f'gradeAssignment.handleInlineViewResponse({response});'
                 tag['onclick'] = onclick
         if contains_grades:
@@ -693,7 +667,7 @@ class BlackboardScraper(Downloader):
             self.update_url_dict(local_path, url=url)
             return local_path
 
-        with self.session.get(base_url + url, stream=True) as r:
+        with self.session.get(self.base_url + url, stream=True) as r:
             url, fragment = self.split_url(r.url)
 
             # Check if (potentially redirected) url already has been downloaded
@@ -721,24 +695,17 @@ class BlackboardScraper(Downloader):
                 if r.status_code != 404:
                     local_path, exists = self.generate_page_title(Utils.soup(string=r.text))
                     if exists:
-                        if Config.DEBUG:
-                            print(f'Duplicate : {local_path}')
                         self.update_url_dict(local_path, url=url, request=r)
                         return local_path
                     full_path = self.get_full_path(local_path)
 
-            print(f'Retrieving: {local_path}')
+            self.print(f'Retrieving: {local_path}')
             self.update_url_dict(local_path, url=url, request=r)
 
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
             # HTML pages need te be processed
             if is_html:
-                if Config.DEBUG:
-                    debug_path = self.get_full_path('/debug' + local_path)[:-5] + '.link'
-                    os.makedirs(os.path.dirname(debug_path), exist_ok=True)
-                    urls = {'old_url': base_url + self.strip_base_url(full_url), 'new_url': base_url + url}
-                    Utils.write(debug_path, urls)
                 navigation_tag = soup.find('div', class_='path', role='navigation')
                 if navigation_tag:
                     # Remove illegal path chars
@@ -806,10 +773,6 @@ class BlackboardScraper(Downloader):
             else:
                 self.downloaded_pages[local_path] = soup
                 done = True
-        if Config.DEBUG:
-            debug_path = self.get_full_path('/debug' + local_path)
-            os.makedirs(os.path.dirname(debug_path), exist_ok=True)
-            Utils.write(debug_path, soup)
         return local_path, exists
 
     def replace_css_urls(self, css: str, url_dir: str, local_dir: str = '/'):
@@ -835,17 +798,15 @@ class BlackboardScraper(Downloader):
                 redirected_url = self.split_url(redirect.url)[0]
                 self.url_dict[redirected_url] = path
 
-    @staticmethod
-    def get_full_path(local_path: str):
+    def get_full_path(self, local_path: str):
         if local_path.startswith('/../'):
-            return Config.DOWNLOAD_PATH + local_path[4:]
+            return self.download_path + local_path[4:]
         else:
-            return website_path + local_path[1:]
+            return self.website_path + local_path[1:]
 
-    @staticmethod
-    def is_local_url(url: str):
+    def is_local_url(self, url: str):
         url = url.lower()
-        return url.startswith(base_url) or not (
+        return url.startswith(self.base_url) or not (
                 url == 'none' or
                 url.startswith('#') or
                 url.startswith('%') or
@@ -857,25 +818,22 @@ class BlackboardScraper(Downloader):
                 url.startswith('https:')
         )
 
-    @staticmethod
-    def get_url_dir(url: str):
-        return posixpath.dirname(BlackboardScraper.strip_base_url(url))
+    def get_url_dir(self, url: str):
+        return posixpath.dirname(self.strip_base_url(url))
 
-    @staticmethod
-    def strip_base_url(url: str):
-        if url.startswith(base_url):
-            url = url[len(base_url):]
+    def strip_base_url(self, url: str):
+        if url.startswith(self.base_url):
+            url = url[len(self.base_url):]
         return url
 
-    @staticmethod
-    def split_url(url: str):
-        url = BlackboardScraper.strip_base_url(url)
+    def split_url(self, url: str):
+        url = self.strip_base_url(url)
         fragment = ''
         fragment_index = url.find('#')
         if fragment_index > 0:
             url, fragment = url[:fragment_index], url[fragment_index:]
         if '?' in url:
-            url = BlackboardScraper.sanitize_url_params(url)
+            url = self.sanitize_url_params(url)
         return url, fragment
 
     @staticmethod
@@ -936,3 +894,9 @@ class BlackboardScraper(Downloader):
         u = u._replace(query=urllib.parse.urlencode(sorted(query.items()), True, quote_via=urllib.parse.quote))
         url = urllib.parse.urlunparse(u)
         return url
+
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = BlackboardScraper(master=root)
+    app.mainloop()
