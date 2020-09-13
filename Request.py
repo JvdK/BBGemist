@@ -44,6 +44,10 @@ def download(downloader, url, folder, file_name=None, referrer=None, cookie=None
     Utils.info("Folder", folder)
     Utils.info("File", file_name)
 
+    # fix long file names
+    if len(folder + file_name) > 254:
+        file_name = file_name[:32] + "_" + "".join(random.choices("0123456789abcdef", k=8)) + "." + file_name.split(".")[-1]
+
     # return False when Exception occurs #
     try:
         # start download #
