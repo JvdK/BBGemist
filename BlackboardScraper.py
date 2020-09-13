@@ -131,7 +131,8 @@ class BlackboardScraper(tk.Frame):
         self.get_organisations_page()
         self.get_grades_pages()
         self.create_index_page()
-        self.print('Done!')
+        self.print('Done!!!')
+        self.print('You can safely close this window now')
 
     def get_cdn_images(self):
         self.download_local_file('/images/ci/mybb/x_btn.png')
@@ -962,5 +963,7 @@ class BlackboardScraper(tk.Frame):
 
 if __name__ == '__main__':
     root = tk.Tk()
+    root.iconbitmap('bb-icon2.ico')
+    root.title('Blackboard scraper')
     app = BlackboardScraper(master=root)
     app.mainloop()
