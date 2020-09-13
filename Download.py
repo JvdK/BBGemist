@@ -369,7 +369,14 @@ class Download(Downloader):
 
             return
 
+        if "You are or were enrolled in more than one group for this assignment. Choose the group below for which you would like to access this assignment." in str(soup):
+            print("This is a group submission page! Deleting html and ignoring!")
+            os.remove(submission_page)
+
+            return
+
         assignment_files = soup.find("div", {"id": "assignmentInfo"})
+
         assignment_files = assignment_files.find("ul")
         if assignment_files is not None:
             print("Found {} assignment files".format(len(assignment_files.find_all("a"))))
