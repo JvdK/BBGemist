@@ -138,11 +138,19 @@ class Download(Downloader):
 
             print("- {}".format(course_folder_name))
 
+            if "webapps" not in course_folder_url:
+                continue
+
+            if "contentWrapper.jsp" in course_folder_url:
+                continue
+
             skip = [
                 "Course Home Page",
+                "Organization Home Page",
                 "tool_id=_115", # email
                 "tool_id=_119", # discussion board
                 "tool_id=_167", # contacts
+                "tool_id=_1842", # unenroll
                 "tool_id=_178" # grades added manually
             ]
 
@@ -237,7 +245,7 @@ class Download(Downloader):
                         section_type = image.get("alt")  # No other way to get type... Bad bad Blackboard...
 
                         if section_type == "Content Folder":
-                            input("A sub-folder was found! Press [Enter] to download this folder...")
+                            # input("A sub-folder was found! Press [Enter] to download this folder...")
 
                             folder_url = "https://blackboard.utwente.nl" + section.find("h3").find("a").get("href")
                             folder_name = section.find("h3").text.strip().replace("/", "&").replace("\\", "&")
@@ -253,7 +261,7 @@ class Download(Downloader):
                             self.parse_course_page(course_info, Config.CACHE_PATH + folder + folder_name + ".html")
 
                         elif section_type == "Assignment":
-                            input("An assignment was found! Press [Enter] to download this assignment...")
+                            # input("An assignment was found! Press [Enter] to download this assignment...")
 
                             assignment_url = "https://blackboard.utwente.nl" + section.find("h3").find("a").get("href")
                             assignment_name = section.find("h3").text.strip().replace("/", "&").replace("\\", "&")
@@ -311,8 +319,9 @@ class Download(Downloader):
                             logging.info("File Name: {}".format(file_name))
                             logging.info("File Size: {}".format(file_size))
 
-                            print("\nPress enter to download")
-                            input()
+                            # print("\nPress enter to download")
+                            # input()
+                            Utils.wait(1)
 
                             print("Downloading File...")
                             Utils.info("Course", course_info["course_name"])
@@ -383,7 +392,7 @@ class Download(Downloader):
 
             assignment_files = assignment_files.find_all("a")
 
-            input("Press [Enter] to download assignment files...")
+            # input("Press [Enter] to download assignment files...")
 
             for assignment_file in assignment_files:
                 filename = unquote(assignment_file.text)
@@ -399,7 +408,7 @@ class Download(Downloader):
 
         print("Found {} submitted files".format(len(submission_files)))
         print()
-        input("Press [Enter] to download submission files...")
+        # input("Press [Enter] to download submission files...")
 
         for submission_file in submission_files:
             filename = unquote(submission_file.get("href").split("=")[-1])
