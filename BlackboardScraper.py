@@ -21,7 +21,7 @@ base_url = 'https://blackboard.utwente.nl'
 website_path = Config.DOWNLOAD_PATH + 'website/'
 
 
-class PageCopy(Downloader):
+class BlackboardScraper(Downloader):
     username = None
     password = None
     url_dict = {
@@ -299,7 +299,7 @@ class PageCopy(Downloader):
         context_bottom['class'] = 'stream_context_bottom'
 
         def find_name_by_id(e: dict):
-            course_id = PageCopy.get_entry_course_id(e)
+            course_id = BlackboardScraper.get_entry_course_id(e)
             for course in stream_entries['sv_extras']['sx_courses']:
                 if course['id'] == course_id:
                     return course['name']
@@ -603,7 +603,7 @@ class PageCopy(Downloader):
     @staticmethod
     def replace_redirects(soup: BeautifulSoup):
         for tag in soup.find_all('a', href=re.compile(r'contentWrapper\.jsp')):
-            url, query = PageCopy.parse_query(tag['href'])
+            url, query = BlackboardScraper.parse_query(tag['href'])
             tag['href'] = query['href'][0]
 
     @staticmethod
@@ -859,7 +859,7 @@ class PageCopy(Downloader):
 
     @staticmethod
     def get_url_dir(url: str):
-        return posixpath.dirname(PageCopy.strip_base_url(url))
+        return posixpath.dirname(BlackboardScraper.strip_base_url(url))
 
     @staticmethod
     def strip_base_url(url: str):
@@ -869,18 +869,18 @@ class PageCopy(Downloader):
 
     @staticmethod
     def split_url(url: str):
-        url = PageCopy.strip_base_url(url)
+        url = BlackboardScraper.strip_base_url(url)
         fragment = ''
         fragment_index = url.find('#')
         if fragment_index > 0:
             url, fragment = url[:fragment_index], url[fragment_index:]
         if '?' in url:
-            url = PageCopy.sanitize_url_params(url)
+            url = BlackboardScraper.sanitize_url_params(url)
         return url, fragment
 
     @staticmethod
     def sanitize_url_params(url: str):
-        u, query = PageCopy.parse_query(url)
+        u, query = BlackboardScraper.parse_query(url)
         if 'toggle_mode' in query:
             del query['toggle_mode']
 
@@ -891,7 +891,7 @@ class PageCopy(Downloader):
             query['nav'].remove('discussion_board_entry')
             query['nav'].append('discussion_board')
 
-        return PageCopy.unparse_query(u, query)
+        return BlackboardScraper.unparse_query(u, query)
 
     def url_to_path(self, url: str, content_type: str = None):
         if '/webapps/assignment/download' in url:
