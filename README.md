@@ -13,9 +13,9 @@ To install the dependencies run:
 python -m pip install -r requirements.txt
 ````
 
-To run the program, go to the folder that contains the code and then go one level up and run:
+To run the program use:
 ````
-python BBGemist
+python BlackboardScraper
 ````
 
 Compile EXE
