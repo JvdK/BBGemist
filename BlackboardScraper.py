@@ -754,7 +754,7 @@ class BlackboardScraper(tk.Frame):
             self.print(f'Retrieving: {local_path}')
             self.update_url_dict(local_path, url=url, request=r)
 
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            os.makedirs(self.to_long_path(os.path.dirname(full_path)), exist_ok=True)
 
             # HTML pages need te be processed
             if is_html:
