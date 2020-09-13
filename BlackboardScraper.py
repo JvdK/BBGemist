@@ -78,7 +78,7 @@ class BlackboardScraper(tk.Frame):
         self.password = simpledialog.askstring("Password", "What is your password?", parent=self, show='*')
         logged_in = self.login()
         if logged_in:
-            self.start_button.configure(text="Start", command=self.get_all_pages)
+            self.start_button.configure(text="Start", command=self.download_command)
             self.other_button.configure(state=tk.NORMAL)
             self.print('Login successful!')
             self.info_message()
