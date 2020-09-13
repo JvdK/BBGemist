@@ -921,7 +921,7 @@ class BlackboardScraper(tk.Frame):
                 filename = posixpath.basename(url)
                 path = f'/../{self.navigation_stack[-1]}/{filename}'
             else:
-                path = url
+                path = posixpath.normpath(url)
         path = urllib.parse.unquote(path)
         if content_type:
             if content_type == 'image/svg+xml':
