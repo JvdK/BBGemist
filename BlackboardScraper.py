@@ -732,13 +732,13 @@ class BlackboardScraper(tk.Frame):
             if r.status_code == 404:
                 local_path = '/404.html'
             else:
-                local_path = self.url_to_path(url, r.headers['content-type'])
+                local_path = self.url_to_path(url, r.headers.get('content-type'))
             full_path = self.get_full_path(local_path)
             if os.path.isfile(full_path):
                 self.update_url_dict(local_path, url=url, request=r)
                 return local_path
 
-            is_html = 'html' in r.headers['content-type']
+            is_html = 'content-type' in r.headers and 'html' in r.headers['content-type']
             soup = None
 
             # HTML paths are based on page title
