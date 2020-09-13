@@ -739,11 +739,15 @@ class BlackboardScraper(tk.Frame):
         if navigation_tag:
             title = ' - '.join(navigation_tag.stripped_strings)
         else:
-            title_tag = soup.find('title')
-            if title_tag:
-                title = title_tag.text
+            header_tag = soup.find(id='streamDetailHeaderRightClickable')
+            if header_tag:
+                title = header_tag.text
             else:
-                title = 'unknown'
+                title_tag = soup.find('title')
+                if title_tag:
+                    title = title_tag.text
+                else:
+                    title = 'unknown'
         if edit_mode:
             title += ' (edit mode)'
         # Remove illegal filename characters
