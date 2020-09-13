@@ -7,6 +7,7 @@ import posixpath
 import re
 import time
 import tkinter as tk
+import traceback
 import urllib.parse
 from os.path import expanduser
 from queue import Queue
@@ -72,18 +73,20 @@ class BlackboardScraper(tk.Frame):
         self.message_queue.put(text)
 
     def login_command(self):
+        self.start_button.configure(state=tk.DISABLED)
         self.print('Enter your username...')
         self.username = simpledialog.askstring("Username", "What is your username?", parent=self)
         self.print('Enter your password...')
         self.password = simpledialog.askstring("Password", "What is your password?", parent=self, show='*')
         logged_in = self.login()
         if logged_in:
-            self.start_button.configure(text="Start", command=self.download_command)
+            self.start_button.configure(text="Start", command=self.download_command, state=tk.NORMAL)
             self.other_button.configure(state=tk.NORMAL)
             self.print('Login successful!')
             self.info_message()
         else:
             self.print('Login failed, please check your credentials and try again')
+            self.start_button.configure(state=tk.NORMAL)
 
     def info_message(self):
         self.print()
@@ -107,7 +110,7 @@ class BlackboardScraper(tk.Frame):
     def download_command(self):
         self.start_button.configure(state=tk.DISABLED)
         self.other_button.configure(state=tk.DISABLED)
-        self.worker = Thread(target=self.get_all_pages, daemon=True)
+        self.worker = Thread(target=self.start, daemon=True)
         self.worker.start()
 
     def login(self):
@@ -126,14 +129,24 @@ class BlackboardScraper(tk.Frame):
         r = self.session.post(login_url, data=payload)
         return 'webapps/portal/execute/tabs' in r.text
 
+    # noinspection PyBroadException
+    def start(self):
+        try:
+            self.get_all_pages()
+            self.print('Done!!!')
+            self.print('You can safely close this window now')
+        except Exception:
+            self.print()
+            self.print('An exception ocurred, please send the following info to blackboardscraper@svenkonings.nl:')
+            self.print()
+            self.print(traceback.format_exc())
+
     def get_all_pages(self):
         self.get_cdn_images()
         self.get_courses_page()
         self.get_organisations_page()
         self.get_grades_pages()
         self.create_index_page()
-        self.print('Done!!!')
-        self.print('You can safely close this window now')
 
     def get_cdn_images(self):
         self.download_local_file('/images/ci/mybb/x_btn.png')
