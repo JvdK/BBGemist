@@ -762,10 +762,11 @@ class BlackboardScraper(tk.Frame):
                 header_tag = soup.find(id='streamDetailHeaderRightClickable')
                 if navigation_tag:
                     # Remove illegal path chars
-                    navigation_strings = map(lambda s: re.sub(r'[<>:"/\\|?*.]', '', s), navigation_tag.stripped_strings)
+                    navigation_strings = map(self.filter_filename_chars, navigation_tag.stripped_strings)
                     self.navigation_stack.append('/'.join(navigation_strings))
                 elif header_tag:
-                    self.navigation_stack.append(header_tag.text)
+                    navigation_string = self.filter_filename_chars(header_tag.text)
+                    self.navigation_stack.append(navigation_string)
                 url_dir = posixpath.dirname(url)
                 self.process_page(soup, url_dir)
                 if navigation_tag or header_tag:
@@ -807,7 +808,7 @@ class BlackboardScraper(tk.Frame):
         if edit_mode:
             title += ' (edit mode)'
         # Remove illegal filename characters
-        title = re.sub(r'[<>:"/\\|?*]', '', title)
+        title = self.filter_filename_chars(title)
 
         self.remove_scripts(soup)
         self.cleanup_page(soup)
@@ -926,7 +927,7 @@ class BlackboardScraper(tk.Frame):
             else:
                 path = posixpath.normpath(url)
         path = urllib.parse.unquote(path)
-        path = re.sub(r'[<>:"|?*]', '', path)
+        path = self.filter_path_chars(path)
         if content_type:
             if content_type == 'image/svg+xml':
                 if not path.lower().endswith('.svg'):
@@ -978,6 +979,14 @@ class BlackboardScraper(tk.Frame):
             print("Unsupported type")
         with codecs.open(BlackboardScraper.to_long_path(file), mode="w", encoding="utf-8") as f:
             f.write(dump)
+
+    @staticmethod
+    def filter_path_chars(filename):
+        return re.sub(r'[<>:"|?*]', '', filename)
+
+    @staticmethod
+    def filter_filename_chars(filename):
+        return re.sub(r'[<>:"/\\|?*]', '', filename)
 
     @staticmethod
     def to_long_path(path: str):
