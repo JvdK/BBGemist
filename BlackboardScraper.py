@@ -923,6 +923,7 @@ class BlackboardScraper(tk.Frame):
             else:
                 path = posixpath.normpath(url)
         path = urllib.parse.unquote(path)
+        path = re.sub(r'[<>:"|?*]', '', path)
         if content_type:
             if content_type == 'image/svg+xml':
                 if not path.lower().endswith('.svg'):
