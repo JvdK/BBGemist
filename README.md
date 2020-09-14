@@ -6,7 +6,7 @@ The web pages will be scraped and modified to work without a web-server to creat
 
 Installation Instructions
 -------------------------
-This program requires that you have installed Python 3 from https://www.python.org/
+This program requires that you have installed Python 3.7 from https://www.python.org/
 
 To install the dependencies run:
 ````
@@ -15,7 +15,7 @@ python -m pip install -r requirements.txt
 
 To run the program use:
 ````
-python BlackboardScraper
+python BlackboardScraper.py
 ````
 
 Compile EXE
