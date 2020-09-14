@@ -759,13 +759,16 @@ class BlackboardScraper(tk.Frame):
             # HTML pages need te be processed
             if is_html:
                 navigation_tag = soup.find('div', class_='path', role='navigation')
+                header_tag = soup.find(id='streamDetailHeaderRightClickable')
                 if navigation_tag:
                     # Remove illegal path chars
                     navigation_strings = map(lambda s: re.sub(r'[<>:"/\\|?*.]', '', s), navigation_tag.stripped_strings)
                     self.navigation_stack.append('/'.join(navigation_strings))
+                elif header_tag:
+                    self.navigation_stack.append(header_tag.text)
                 url_dir = posixpath.dirname(url)
                 self.process_page(soup, url_dir)
-                if navigation_tag:
+                if navigation_tag or header_tag:
                     self.navigation_stack.pop()
                 self.write(full_path, soup.prettify())
             # CSS urls need to be rewritten
